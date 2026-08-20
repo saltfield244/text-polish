@@ -316,27 +316,37 @@ public partial class App : Application
             _logger.Error("設定ファイルの再読み込みに失敗しました。メモリ上の設定を使用します。", ex);
         }
 
-        var window = new SettingsWindow(_settings, OnSettingsSaved, _logger);
-        window.ShowDialog();
+        // 設定画面を開いている間はフックを止める。
+        // 有効なままだと、ホットキーとして割り当てようとしたキーをフックが横取りしてしまい、
+        // 入力欄に届かない。さらにパレット側の処理が走り、選択テキスト取得のために
+        // 送出される Ctrl+C が設定画面に入力されてしまう。
+        SuspendHotkeys();
+
+        try
+        {
+            var window = new SettingsWindow(_settings, OnSettingsSaved, _logger);
+            window.ShowDialog();
+        }
+        finally
+        {
+            // 保存・キャンセルのどちらで閉じても、その時点の設定でフックを張り直す。
+            ReconfigureHotkeys();
+        }
     }
 
     private void OnSettingsSaved(AppSettings updated)
     {
         _settings = updated;
         AppSettingsLoader.Save(_settingsFilePath, _settings);
-        ReconfigureHotkeys();
 
+        // フックの張り直しは設定画面を閉じたあとに ShowSettingsWindow 側で行う。
         _logger.Info(
             "設定を保存しました(ホットキーは即時反映、LLMプロバイダは次回実行から反映、" +
             "RequestTimeoutSeconds は再起動後に反映)。");
     }
 
-    /// <summary>
-    /// ホットキーのフックを作り直す。
-    /// 設定画面から有効・無効を切り替えられるため、キー名の更新だけでは足りない
-    /// (起動時に無効だったものを、あとから有効にできない)。
-    /// </summary>
-    private void ReconfigureHotkeys()
+    /// <summary>ホットキーのフックを解除する。</summary>
+    private void SuspendHotkeys()
     {
         if (_polishHotkeyService is not null)
         {
@@ -351,6 +361,16 @@ public partial class App : Application
             _quickHotkeyService.Dispose();
             _quickHotkeyService = null;
         }
+    }
+
+    /// <summary>
+    /// ホットキーのフックを作り直す。
+    /// 設定画面から有効・無効を切り替えられるため、キー名の更新だけでは足りない
+    /// (起動時に無効だったものを、あとから有効にできない)。
+    /// </summary>
+    private void ReconfigureHotkeys()
+    {
+        SuspendHotkeys();
 
         InitializePolishHotkey();
         InitializeQuickHotkey();
