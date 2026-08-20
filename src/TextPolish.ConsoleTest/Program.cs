@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using TextPolish.Core.Configuration;
 using TextPolish.Core.Diff;
+using TextPolish.Core.Hotkey;
 using TextPolish.Core.Llm;
 using TextPolish.Core.Logging;
 
@@ -26,6 +27,7 @@ internal static class Program
             Console.WriteLine("  TextPolish.ConsoleTest .\\appsettings.json \"あーときょうのばんごはんは\" \"誤変換だけ直す\"");
             Console.WriteLine("  TextPolish.ConsoleTest .\\appsettings.json \"あーと明日の会議ですが\" \"要約,英訳\"");
             Console.WriteLine("  TextPolish.ConsoleTest diff \"原文\" \"整形後\"   (LLMを呼ばずに差分だけ確認)");
+            Console.WriteLine("  TextPolish.ConsoleTest hotkey \"Ctrl+Shift+W\"      (ホットキー表記の解釈を確認)");
             return;
         }
 
@@ -39,6 +41,31 @@ internal static class Program
             }
 
             PrintDiff(args[1], args[2]);
+            return;
+        }
+
+        // ホットキー表記の確認用。設定ファイルに書いた文字列が意図どおり解釈されるか見る。
+        if (string.Equals(args[0], "hotkey", StringComparison.OrdinalIgnoreCase))
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("使い方: TextPolish.ConsoleTest hotkey \"Ctrl+Shift+W\"");
+                return;
+            }
+
+            if (HotkeyDefinition.TryParse(args[1], out var parsed))
+            {
+                Console.WriteLine($"入力    : {args[1]}");
+                Console.WriteLine($"修飾キー: {parsed.Modifiers}");
+                Console.WriteLine($"主キー  : {parsed.Key}");
+                Console.WriteLine($"正規表記: {parsed}");
+            }
+            else
+            {
+                Console.WriteLine($"解釈できません: {args[1]}");
+                Console.WriteLine("例: F10 / Ctrl+Shift+W / Win+Alt+X");
+            }
+
             return;
         }
 

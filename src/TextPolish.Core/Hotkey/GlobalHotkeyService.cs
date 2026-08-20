@@ -33,6 +33,15 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    private const int VK_SHIFT = 0x10;
+    private const int VK_CONTROL = 0x11;
+    private const int VK_MENU = 0x12;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
+
     [StructLayout(LayoutKind.Sequential)]
     private struct KBDLLHOOKSTRUCT
     {
@@ -47,7 +56,7 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
     private readonly LowLevelKeyboardProc _proc;
     private readonly bool _suppressKey;
     private IntPtr _hookId = IntPtr.Zero;
-    private int _targetVkCode;
+    private HotkeyDefinition _hotkey = HotkeyDefinition.None;
     private bool _isKeyDown;
     private SynchronizationContext? _syncContext;
 
@@ -71,17 +80,51 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
     {
         _isKeyDown = false;
 
-        if (Enum.TryParse<Keys>(keyName, ignoreCase: true, out var key))
+        if (HotkeyDefinition.TryParse(keyName, out var hotkey))
         {
-            _targetVkCode = (int)key;
-            _logger.Info($"ホットキーを '{keyName}' (VK=0x{_targetVkCode:X2}) に設定しました。");
+            _hotkey = hotkey;
+            _logger.Info($"ホットキーを '{_hotkey}' に設定しました。");
         }
         else
         {
-            _logger.Warn($"ホットキー名 '{keyName}' を解釈できませんでした。既定のF9を使用します。");
-            _targetVkCode = (int)Keys.F9;
+            _logger.Warn($"ホットキー '{keyName}' を解釈できませんでした。既定のF9を使用します。");
+            _hotkey = new HotkeyDefinition(HotkeyModifiers.None, Keys.F9);
         }
     }
+
+    /// <summary>
+    /// 現在押されている修飾キーを取得する。
+    /// フックのコールバック時点では物理的なキー状態が既に反映されているため、
+    /// 修飾キーの押下をフック側で別途追跡しなくても判定できる。
+    /// </summary>
+    private static HotkeyModifiers CurrentModifiers()
+    {
+        var modifiers = HotkeyModifiers.None;
+
+        if (IsPressed(VK_CONTROL))
+        {
+            modifiers |= HotkeyModifiers.Control;
+        }
+
+        if (IsPressed(VK_SHIFT))
+        {
+            modifiers |= HotkeyModifiers.Shift;
+        }
+
+        if (IsPressed(VK_MENU))
+        {
+            modifiers |= HotkeyModifiers.Alt;
+        }
+
+        if (IsPressed(VK_LWIN) || IsPressed(VK_RWIN))
+        {
+            modifiers |= HotkeyModifiers.Windows;
+        }
+
+        return modifiers;
+    }
+
+    private static bool IsPressed(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 
     public void Start()
     {
@@ -126,22 +169,34 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
             var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
             var msg = wParam.ToInt32();
 
-            if (data.vkCode == _targetVkCode)
+            if (data.vkCode == (int)_hotkey.Key)
             {
-                if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && !_isKeyDown)
+                var isDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+                var isUp = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+                var consumed = false;
+
+                // 修飾キーは完全一致を要求する。Ctrl+W に対して Ctrl+Shift+W を
+                // 拾ってしまうと、別の操作を横取りすることになるため。
+                if (isDown && !_isKeyDown && CurrentModifiers() == _hotkey.Modifiers)
                 {
                     _isKeyDown = true;
+                    consumed = true;
                     RaiseHotkeyEvent(HotkeyDown);
                 }
-                else if ((msg == WM_KEYUP || msg == WM_SYSKEYUP) && _isKeyDown)
+                else if (isUp && _isKeyDown)
                 {
+                    // 押下を消費した以上、離上も必ず消費する。
+                    // ここで修飾キーの状態を見ないのは、主キーより先に修飾キーを
+                    // 離された場合に、対にならないキーイベントが下流へ漏れるため。
                     _isKeyDown = false;
+                    consumed = true;
                     RaiseHotkeyEvent(HotkeyUp);
                 }
 
-                // 押下・離上の両方を止める。片方だけ通すと、対象アプリが
-                // 対になっていないキーイベントを受け取って誤動作する。
-                if (_suppressKey)
+                // ホットキーとして消費したときだけ止める。
+                // 主キーが一致しても修飾キーが違う場合は通常の入力なので下流へ流す
+                // (「Ctrl+Shift+W」を割り当てても、単独の W はそのまま入力できる)。
+                if (consumed && _suppressKey)
                 {
                     return (IntPtr)1;
                 }

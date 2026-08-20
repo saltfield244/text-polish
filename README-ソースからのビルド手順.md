@@ -144,6 +144,7 @@ src\
 | 場所 | 役割 |
 |---|---|
 | `Core/Hotkey/GlobalHotkeyService.cs` | グローバルホットキー(低レベルフック) |
+| `Core/Hotkey/HotkeyDefinition.cs` | ホットキー表記の解釈("Ctrl+Shift+W" 等) |
 | `Core/Automation/SelectionCapture.cs` | 選択テキストの取得(Ctrl+C経由) |
 | `Core/Automation/ClipboardTextInserter.cs` | 整形結果の書き戻し(Ctrl+V経由) |
 | `Core/Llm/` | LLMプロバイダ実装(Azure OpenAI / Gemini / OpenAI互換) |

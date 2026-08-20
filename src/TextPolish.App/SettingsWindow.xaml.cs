@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using TextPolish.Core.Configuration;
+using TextPolish.Core.Hotkey;
 using TextPolish.Core.Logging;
 
 namespace TextPolish.App;
@@ -38,14 +39,62 @@ public partial class SettingsWindow : Window
     {
         e.Handled = true;
 
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key is Key.Tab or Key.LWin or Key.RWin)
+        if (!TryCaptureHotkey(e, out var hotkey))
         {
             return;
         }
 
-        _pendingPolishHotkey = key.ToString();
+        _pendingPolishHotkey = hotkey;
         PolishHotkeyTextBox.Text = _pendingPolishHotkey;
+        QuickHotkeyWarning.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 押されたキーの組み合わせを "Ctrl+Shift+W" 形式の文字列にする。
+    /// 修飾キー単独の押下(Ctrlだけ等)は、まだ組み合わせが確定していないので無視する。
+    /// </summary>
+    private static bool TryCaptureHotkey(System.Windows.Input.KeyEventArgs e, out string hotkey)
+    {
+        hotkey = string.Empty;
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+        if (key is Key.LeftCtrl or Key.RightCtrl
+                or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt
+                or Key.LWin or Key.RWin
+                or Key.Tab)
+        {
+            return false;
+        }
+
+        var modifiers = HotkeyModifiers.None;
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            modifiers |= HotkeyModifiers.Control;
+        }
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            modifiers |= HotkeyModifiers.Shift;
+        }
+
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            modifiers |= HotkeyModifiers.Alt;
+        }
+
+        // Windowsキーは Keyboard.Modifiers に現れないことがあるため個別に見る。
+        if (Keyboard.IsKeyDown(Key.LWin) || Keyboard.IsKeyDown(Key.RWin))
+        {
+            modifiers |= HotkeyModifiers.Windows;
+        }
+
+        var winFormsKey = (System.Windows.Forms.Keys)KeyInterop.VirtualKeyFromKey(key);
+        hotkey = new HotkeyDefinition(modifiers, winFormsKey).ToString();
+
+        return hotkey.Length > 0;
     }
 
     private void LoadLlmSettings()
@@ -178,13 +227,12 @@ public partial class SettingsWindow : Window
     {
         e.Handled = true;
 
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key is Key.Tab or Key.LWin or Key.RWin)
+        if (!TryCaptureHotkey(e, out var hotkey))
         {
             return;
         }
 
-        _pendingQuickHotkey = key.ToString();
+        _pendingQuickHotkey = hotkey;
         QuickHotkeyTextBox.Text = _pendingQuickHotkey;
         QuickHotkeyWarning.Visibility = Visibility.Collapsed;
     }
