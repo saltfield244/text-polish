@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>TextPolish.Core</RootNamespace>
+    <AssemblyName>TextPolish.Core</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- UseWPF: UIAutomationClient/UIAutomationTypesの参照とWPF Clipboard(STA)を利用するため。
+         UseWindowsForms: SendKeys等の補助APIを利用するため。 -->
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+</Project>

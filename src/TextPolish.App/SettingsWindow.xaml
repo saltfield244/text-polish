@@ -1,0 +1,139 @@
+<Window x:Class="TextPolish.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="テキスト整形ツール - 設定"
+        Height="600" Width="520"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize">
+    <Window.Resources>
+        <Style TargetType="TextBlock" x:Key="FieldLabel">
+            <Setter Property="Margin" Value="0,10,0,3"/>
+        </Style>
+        <Style TargetType="TextBlock" x:Key="SectionLabel">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0">
+
+            <!-- 一般 -->
+            <TabItem Header="一般">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="14">
+                    <CheckBox x:Name="EnablePolishCheckBox" Content="整形パレットを有効にする"/>
+
+                    <TextBlock Text="パレットを開くホットキー" Style="{StaticResource FieldLabel}"/>
+                    <TextBox x:Name="PolishHotkeyTextBox" IsReadOnly="True"
+                             PreviewKeyDown="PolishHotkeyTextBox_PreviewKeyDown"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
+                               Text="欄をクリックして割り当てたいキーを押してください。指定したキーは他のアプリには渡らなくなります。"/>
+
+                    <CheckBox x:Name="ShowDiffCheckBox" Margin="0,20,0,0"
+                              Content="整形結果を差分ハイライトで表示する"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
+                               Text="変更箇所を色分けして表示します。パレット上でも切り替えられます。書き換えが大きい場合(要約・翻訳など)は、差分が読めなくなるため自動的に表示されません。"/>
+
+                    <TextBlock Text="即実行(パレットを出さずに整形して置き換える)"
+                               Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
+                    <TextBlock Text="ホットキー" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="QuickHotkeyTextBox" IsReadOnly="True"
+                                 PreviewKeyDown="QuickHotkeyTextBox_PreviewKeyDown"/>
+                        <Button Grid.Column="1" x:Name="ClearQuickHotkeyButton" Content="無効にする"
+                                Width="90" Margin="8,0,0,0" Click="ClearQuickHotkeyButton_Click"/>
+                    </Grid>
+                    <TextBlock Text="使うプリセット" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox x:Name="QuickPresetCombo"/>
+                    <TextBlock x:Name="QuickHotkeyWarning" TextWrapping="Wrap" Foreground="#A32D2D"
+                               Margin="0,6,0,0" Visibility="Collapsed"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
+                               Text="確認画面を出さずにその場で置き換えます。取り消しは貼り付け先で Ctrl+Z。空欄のときは無効です。"/>
+
+                    <TextBlock Text="使い方" Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray"
+                               Text="1. Win+H などで文章を入力する&#x0a;2. 整形したい範囲を選択する&#x0a;3. ホットキーを押すとパレットが開く&#x0a;4. プリセットを選ぶか、自由に指示を書いて実行&#x0a;5. 結果を確認して「置き換える」を押すと、選択範囲が整形結果に置き換わります"/>
+
+                    <TextBlock Text="プリセット" Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
+                    <TextBlock x:Name="PresetSummaryText" TextWrapping="Wrap" Foreground="Gray"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,6,0,0"
+                               Text="プリセットの追加・編集は appsettings.json の Polish.Presets で行えます。整形の共通方針は PolishSystemPrompt.txt、用語辞書は Glossary.txt を編集してください。"/>
+                </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- LLM -->
+            <TabItem Header="LLM">
+                <StackPanel Margin="14">
+                    <TextBlock Text="プロバイダ" Style="{StaticResource SectionLabel}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="AzureOpenAiRadio" Content="Azure OpenAI" GroupName="LlmProvider"
+                                     Margin="0,0,14,0" Checked="LlmProviderRadio_Changed"/>
+                        <RadioButton x:Name="GeminiRadio" Content="Gemini" GroupName="LlmProvider"
+                                     Margin="0,0,14,0" Checked="LlmProviderRadio_Changed"/>
+                        <RadioButton x:Name="OpenAiCompatibleRadio" Content="OpenAI互換" GroupName="LlmProvider"
+                                     Checked="LlmProviderRadio_Changed"/>
+                    </StackPanel>
+
+                    <!-- Azure OpenAI -->
+                    <StackPanel x:Name="AzurePanel" Visibility="Collapsed">
+                        <TextBlock Text="エンドポイント (例: https://your-resource.openai.azure.com)"
+                                   Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="AzureEndpointBox"/>
+                        <TextBlock Text="APIキー" Style="{StaticResource FieldLabel}"/>
+                        <PasswordBox x:Name="AzureApiKeyBox"/>
+                        <TextBlock Text="デプロイ名(Azureでモデルをデプロイした際に付けた名前)"
+                                   Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="AzureDeploymentBox"/>
+                        <TextBlock Text="APIバージョン" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="AzureApiVersionBox"/>
+                    </StackPanel>
+
+                    <!-- Gemini -->
+                    <StackPanel x:Name="GeminiPanel" Visibility="Collapsed">
+                        <TextBlock Text="エンドポイント" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="GeminiEndpointBox"/>
+                        <TextBlock Text="APIキー / アクセストークン" Style="{StaticResource FieldLabel}"/>
+                        <PasswordBox x:Name="GeminiApiKeyBox"/>
+                        <TextBlock Text="モデル" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="GeminiModelBox"/>
+                        <TextBlock Text="認証方式" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox x:Name="GeminiAuthModeCombo">
+                            <ComboBoxItem Content="ApiKeyQueryParam"/>
+                            <ComboBoxItem Content="BearerToken"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- OpenAI互換 -->
+                    <StackPanel x:Name="OpenAiPanel" Visibility="Collapsed">
+                        <TextBlock Text="エンドポイント (例: https://openrouter.ai/api/v1/chat/completions)"
+                                   Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="OpenAiEndpointBox"/>
+                        <TextBlock Text="APIキー" Style="{StaticResource FieldLabel}"/>
+                        <PasswordBox x:Name="OpenAiApiKeyBox"/>
+                        <TextBlock Text="モデル (例: openai/gpt-4o-mini)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="OpenAiModelBox"/>
+                    </StackPanel>
+
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,14,0,0"
+                               Text="APIキーは appsettings.json に平文で保存されます。未設定の場合、整形は実行できません。"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="SaveButton" Content="保存" Width="90" Margin="0,0,8,0" Click="SaveButton_Click"/>
+            <Button x:Name="CancelButton" Content="キャンセル" Width="90" Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

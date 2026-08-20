@@ -1,0 +1,16 @@
+# ビルド成果物
+bin/
+obj/
+dist/
+publish/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+
+# ローカル環境固有
+.claude/settings.local.json
+
+# 配布・実行時に生成される設定(APIキーを含みうるため追跡しない)
+**/bin/**/appsettings.json
