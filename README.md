@@ -79,7 +79,8 @@ dotnet publish src\TextPolish.App\TextPolish.App.csproj -c Release -r win-x64 --
 
 ## 注意
 
-APIキーは `appsettings.json` に平文で保存されます。取り扱いにご注意ください。
+APIキーはWindowsのデータ保護機能(DPAPI)で暗号化して `appsettings.json` に保存されます。
+保存したときと同じWindowsユーザーでしか読み出せません。v1.0.1以前の平文のキーは起動時に自動で暗号化されます。
 
 整形のために、選択したテキスト・アクティブなアプリ名・カーソル周辺のテキスト・
 用語辞書の内容が、設定したLLMのAPIへ送信されます。詳細は

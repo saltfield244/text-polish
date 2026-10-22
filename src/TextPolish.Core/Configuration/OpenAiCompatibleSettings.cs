@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TextPolish.Core.Configuration;
 
 /// <summary>
@@ -5,14 +7,20 @@ namespace TextPolish.Core.Configuration;
 /// OpenRouter / OpenAI本家 / ローカルのOpenAI互換サーバー(Ollama, LM Studio等)を想定。
 /// Azure OpenAIはURL形式と認証方式が異なるため <see cref="AzureOpenAiSettings"/> を使うこと。
 /// </summary>
-public sealed class OpenAiCompatibleSettings
+public sealed class OpenAiCompatibleSettings : IApiKeySettings
 {
     /// <summary>Chat Completions のフルURL。</summary>
     public string Endpoint { get; set; } = "https://openrouter.ai/api/v1/chat/completions";
 
-    // TODO: 平文でのAPIキー管理は開発用の暫定対応。本番運用では環境変数/Windows資格情報マネージャー等への
-    //       移行を検討する。
+    // ファイルにはDPAPIで暗号化した ApiKeyProtected として保存する(平文で書かれていれば読み込み時に移行する)。
     public string ApiKey { get; set; } = "TODO-api-key";
+
+    /// <summary>appsettings.json 上の暗号化済みAPIキー(<see cref="IApiKeySettings"/>参照)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApiKeyProtected { get; set; }
+
+    [JsonIgnore]
+    public bool ApiKeyUnreadable { get; set; }
 
     /// <summary>リクエストボディの model に設定する値(例: "openai/gpt-4o-mini")。</summary>
     public string Model { get; set; } = "TODO-model";

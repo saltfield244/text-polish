@@ -80,7 +80,7 @@ internal static class Program
             return;
         }
 
-        var settings = AppSettingsLoader.Load(settingsPath);
+        var settings = AppSettingsLoader.Load(settingsPath, logger);
         var settingsDir = Path.GetDirectoryName(Path.GetFullPath(settingsPath))!;
 
         // プロンプトと用語辞書の相対パスは、設定ファイルと同じフォルダを基準に解決する。

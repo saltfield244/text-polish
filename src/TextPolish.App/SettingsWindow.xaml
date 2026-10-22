@@ -91,7 +91,13 @@
                                    Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="AzureEndpointBox"/>
                         <TextBlock Text="APIキー" Style="{StaticResource FieldLabel}"/>
-                        <PasswordBox x:Name="AzureApiKeyBox"/>
+                        <DockPanel>
+                            <Button x:Name="AzureApiKeyDeleteButton" DockPanel.Dock="Right" Content="削除"
+                                    Width="60" Margin="6,0,0,0" Click="ApiKeyDeleteButton_Click"/>
+                            <PasswordBox x:Name="AzureApiKeyBox" PasswordChanged="ApiKeyBox_PasswordChanged"/>
+                        </DockPanel>
+                        <TextBlock x:Name="AzureApiKeyStatus" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Visibility="Collapsed"/>
                         <TextBlock Text="デプロイ名(Azureでモデルをデプロイした際に付けた名前)"
                                    Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="AzureDeploymentBox"/>
@@ -104,7 +110,13 @@
                         <TextBlock Text="エンドポイント" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="GeminiEndpointBox"/>
                         <TextBlock Text="APIキー / アクセストークン" Style="{StaticResource FieldLabel}"/>
-                        <PasswordBox x:Name="GeminiApiKeyBox"/>
+                        <DockPanel>
+                            <Button x:Name="GeminiApiKeyDeleteButton" DockPanel.Dock="Right" Content="削除"
+                                    Width="60" Margin="6,0,0,0" Click="ApiKeyDeleteButton_Click"/>
+                            <PasswordBox x:Name="GeminiApiKeyBox" PasswordChanged="ApiKeyBox_PasswordChanged"/>
+                        </DockPanel>
+                        <TextBlock x:Name="GeminiApiKeyStatus" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Visibility="Collapsed"/>
                         <TextBlock Text="モデル" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="GeminiModelBox"/>
                         <TextBlock Text="認証方式" Style="{StaticResource FieldLabel}"/>
@@ -120,13 +132,19 @@
                                    Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="OpenAiEndpointBox"/>
                         <TextBlock Text="APIキー" Style="{StaticResource FieldLabel}"/>
-                        <PasswordBox x:Name="OpenAiApiKeyBox"/>
+                        <DockPanel>
+                            <Button x:Name="OpenAiApiKeyDeleteButton" DockPanel.Dock="Right" Content="削除"
+                                    Width="60" Margin="6,0,0,0" Click="ApiKeyDeleteButton_Click"/>
+                            <PasswordBox x:Name="OpenAiApiKeyBox" PasswordChanged="ApiKeyBox_PasswordChanged"/>
+                        </DockPanel>
+                        <TextBlock x:Name="OpenAiApiKeyStatus" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Visibility="Collapsed"/>
                         <TextBlock Text="モデル (例: openai/gpt-4o-mini)" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="OpenAiModelBox"/>
                     </StackPanel>
 
                     <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,14,0,0"
-                               Text="APIキーは appsettings.json に平文で保存されます。未設定の場合、整形は実行できません。"/>
+                               Text="APIキーはWindowsのデータ保護機能(DPAPI)で暗号化し、appsettings.json に保存します。暗号化したキーは、保存したときと同じWindowsユーザーでしか読み出せません。未設定の場合、整形は実行できません。"/>
                 </StackPanel>
             </TabItem>
         </TabControl>

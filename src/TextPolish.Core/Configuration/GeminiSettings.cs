@@ -1,6 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace TextPolish.Core.Configuration;
 
-public sealed class GeminiSettings
+public sealed class GeminiSettings : IApiKeySettings
 {
     // TODO: Vertex AI経由かGoogle AI Studio経由か未確定(2026-08-08時点)。確定後にEndpoint/AuthModeの
     //       既定値と GeminiFormatter の認証ヘッダー組み立てロジックを見直すこと。
@@ -9,7 +11,15 @@ public sealed class GeminiSettings
     public string Endpoint { get; set; } = "https://generativelanguage.googleapis.com/v1beta/models/TODO-model:generateContent";
 
     // TODO: APIキー(AI Studio)またはアクセストークン(Vertex AI)を設定する
+    //       ファイルにはDPAPIで暗号化した ApiKeyProtected として保存する(平文で書かれていれば読み込み時に移行する)。
     public string ApiKey { get; set; } = "TODO-gemini-api-key";
+
+    /// <summary>appsettings.json 上の暗号化済みAPIキー(<see cref="IApiKeySettings"/>参照)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApiKeyProtected { get; set; }
+
+    [JsonIgnore]
+    public bool ApiKeyUnreadable { get; set; }
 
     public string Model { get; set; } = "TODO-model";
 

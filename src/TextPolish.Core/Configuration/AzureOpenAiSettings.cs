@@ -1,13 +1,21 @@
+using System.Text.Json.Serialization;
+
 namespace TextPolish.Core.Configuration;
 
-public sealed class AzureOpenAiSettings
+public sealed class AzureOpenAiSettings : IApiKeySettings
 {
     // TODO: 実リソースのエンドポイントに置き換える (例: https://{resource}.openai.azure.com)
     public string Endpoint { get; set; } = "https://TODO-your-resource.openai.azure.com";
 
-    // TODO: 平文でのAPIキー管理は開発用の暫定対応。本番運用ではユーザーシークレット/環境変数/
-    //       Windows資格情報マネージャー等への移行を検討する。
+    // ファイルにはDPAPIで暗号化した ApiKeyProtected として保存する(平文で書かれていれば読み込み時に移行する)。
     public string ApiKey { get; set; } = "TODO-azure-openai-api-key";
+
+    /// <summary>appsettings.json 上の暗号化済みAPIキー(<see cref="IApiKeySettings"/>参照)。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApiKeyProtected { get; set; }
+
+    [JsonIgnore]
+    public bool ApiKeyUnreadable { get; set; }
 
     // TODO: デプロイ名を設定する
     public string Deployment { get; set; } = "TODO-deployment-name";

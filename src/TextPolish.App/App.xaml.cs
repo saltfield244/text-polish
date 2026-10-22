@@ -35,11 +35,13 @@ public partial class App : Application
         _logger.Info("アプリケーションを起動します。");
 
         _settingsFilePath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-        _settings = AppSettingsLoader.Load(_settingsFilePath);
+        _settings = AppSettingsLoader.Load(_settingsFilePath, _logger);
 
         _trayIconManager = new TrayIconManager(
             onSettingsRequested: ShowSettingsWindow,
             onExitRequested: () => Shutdown());
+
+        NotifyIfApiKeyUnreadable();
 
         // HttpClient.Timeout は生成後に変更できないため、設定変更時は再起動が必要
         // (OnSettingsSavedのログでその旨を案内している)。
@@ -309,7 +311,7 @@ public partial class App : Application
         // 保存すると外部の編集内容(APIキー等)を消してしまうため。
         try
         {
-            _settings = AppSettingsLoader.Load(_settingsFilePath);
+            _settings = AppSettingsLoader.Load(_settingsFilePath, _logger);
         }
         catch (Exception ex)
         {
@@ -337,12 +339,42 @@ public partial class App : Application
     private void OnSettingsSaved(AppSettings updated)
     {
         _settings = updated;
-        AppSettingsLoader.Save(_settingsFilePath, _settings);
+
+        try
+        {
+            AppSettingsLoader.Save(_settingsFilePath, _settings);
+        }
+        catch (Exception ex)
+        {
+            // 保存は一時ファイル経由で行うため、失敗しても元の appsettings.json はそのまま残っている。
+            _logger.Error("設定の保存に失敗しました。", ex);
+            System.Windows.MessageBox.Show(
+                $"設定を保存できませんでした。\n{ex.Message}\n\n変更は今回の起動中のみ有効です。",
+                "テキスト整形ツール", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
 
         // フックの張り直しは設定画面を閉じたあとに ShowSettingsWindow 側で行う。
         _logger.Info(
             "設定を保存しました(ホットキーは即時反映、LLMプロバイダは次回実行から反映、" +
             "RequestTimeoutSeconds は再起動後に反映)。");
+    }
+
+    /// <summary>復号できないAPIキーがあれば、整形が失敗する理由が分かるよう起動時に知らせる。</summary>
+    private void NotifyIfApiKeyUnreadable()
+    {
+        var unreadable = _settings.ApiKeySettings()
+            .Where(x => x.Settings.ApiKeyUnreadable)
+            .Select(x => x.Section)
+            .ToList();
+
+        if (unreadable.Count > 0)
+        {
+            _trayIconManager.ShowBalloon(
+                "テキスト整形ツール",
+                $"保存済みのAPIキーを読み出せませんでした({string.Join(", ", unreadable)})。設定画面で入力し直してください。",
+                ToolTipIcon.Warning);
+        }
     }
 
     /// <summary>ホットキーのフックを解除する。</summary>

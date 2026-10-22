@@ -15,6 +15,9 @@ public partial class SettingsWindow : Window
     private string _pendingPolishHotkey;
     private string _pendingQuickHotkey;
 
+    /// <summary>「削除」ボタンが押されたプロバイダのAPIキー入力欄。</summary>
+    private readonly HashSet<PasswordBox> _apiKeyDeleteRequested = new();
+
     public SettingsWindow(AppSettings settings, Action<AppSettings> onSaved, IAppLogger logger)
     {
         InitializeComponent();
@@ -113,6 +116,10 @@ public partial class SettingsWindow : Window
         OpenAiApiKeyBox.Password = _settings.OpenAiCompatible.ApiKey;
         OpenAiModelBox.Text = _settings.OpenAiCompatible.Model;
 
+        ShowApiKeyStatus(AzureApiKeyBox, AzureApiKeyStatus, _settings.AzureOpenAI);
+        ShowApiKeyStatus(GeminiApiKeyBox, GeminiApiKeyStatus, _settings.Gemini);
+        ShowApiKeyStatus(OpenAiApiKeyBox, OpenAiApiKeyStatus, _settings.OpenAiCompatible);
+
         if (string.Equals(_settings.LlmProvider, "Gemini", StringComparison.OrdinalIgnoreCase))
         {
             GeminiRadio.IsChecked = true;
@@ -186,22 +193,69 @@ public partial class SettingsWindow : Window
             : "AzureOpenAI";
 
         _settings.AzureOpenAI.Endpoint = AzureEndpointBox.Text.Trim();
-        _settings.AzureOpenAI.ApiKey = AzureApiKeyBox.Password;
+        ApiKeyProtector.ApplyInput(
+            _settings.AzureOpenAI, AzureApiKeyBox.Password, _apiKeyDeleteRequested.Contains(AzureApiKeyBox));
         _settings.AzureOpenAI.Deployment = AzureDeploymentBox.Text.Trim();
         _settings.AzureOpenAI.ApiVersion = AzureApiVersionBox.Text.Trim();
 
         _settings.Gemini.Endpoint = GeminiEndpointBox.Text.Trim();
-        _settings.Gemini.ApiKey = GeminiApiKeyBox.Password;
+        ApiKeyProtector.ApplyInput(
+            _settings.Gemini, GeminiApiKeyBox.Password, _apiKeyDeleteRequested.Contains(GeminiApiKeyBox));
         _settings.Gemini.Model = GeminiModelBox.Text.Trim();
         _settings.Gemini.AuthMode =
             (GeminiAuthModeCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "ApiKeyQueryParam";
 
         _settings.OpenAiCompatible.Endpoint = OpenAiEndpointBox.Text.Trim();
-        _settings.OpenAiCompatible.ApiKey = OpenAiApiKeyBox.Password;
+        ApiKeyProtector.ApplyInput(
+            _settings.OpenAiCompatible, OpenAiApiKeyBox.Password, _apiKeyDeleteRequested.Contains(OpenAiApiKeyBox));
         _settings.OpenAiCompatible.Model = OpenAiModelBox.Text.Trim();
 
         _onSaved(_settings);
         Close();
+    }
+
+    /// <summary>
+    /// 復号できなかったキーがある場合に知らせる。入力欄は空になるが、保存しても暗号文は消えない
+    /// (別のWindowsユーザーで保存した設定をコピーしてきた場合など、元の環境なら読めるため)。
+    /// </summary>
+    private static void ShowApiKeyStatus(PasswordBox box, TextBlock status, IApiKeySettings keySettings)
+    {
+        if (!keySettings.ApiKeyUnreadable)
+        {
+            status.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        status.Text = "保存済みのAPIキーを復号できませんでした(別のWindowsユーザー・PCで保存された可能性があります)。" +
+                      "入力し直すか、「削除」を押してください。";
+        status.Foreground = System.Windows.Media.Brushes.Firebrick;
+        status.Visibility = Visibility.Visible;
+    }
+
+    private void ApiKeyDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        var (box, status) = sender == AzureApiKeyDeleteButton ? (AzureApiKeyBox, AzureApiKeyStatus)
+            : sender == GeminiApiKeyDeleteButton ? (GeminiApiKeyBox, GeminiApiKeyStatus)
+            : (OpenAiApiKeyBox, OpenAiApiKeyStatus);
+
+        box.Password = string.Empty;
+        _apiKeyDeleteRequested.Add(box);
+
+        status.Text = "保存するとAPIキーを削除します。";
+        status.Foreground = System.Windows.Media.Brushes.Gray;
+        status.Visibility = Visibility.Visible;
+    }
+
+    private void ApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        // 削除を押したあとに入力し直した場合は、その値で更新する。
+        if (sender is PasswordBox box && box.Password.Length > 0 && _apiKeyDeleteRequested.Remove(box))
+        {
+            var status = box == AzureApiKeyBox ? AzureApiKeyStatus
+                : box == GeminiApiKeyBox ? GeminiApiKeyStatus
+                : OpenAiApiKeyStatus;
+            status.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)

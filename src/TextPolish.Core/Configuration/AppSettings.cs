@@ -27,4 +27,15 @@ public sealed class AppSettings
 
     /// <summary>選択テキストの整形パレット。</summary>
     public PolishSettings Polish { get; set; } = new();
+
+    /// <summary>
+    /// APIキーを持つプロバイダ設定と、appsettings.json 上のセクション名の組。
+    /// セクション名はプロパティ名と一致させること(保存時にJSONのノードを探すのに使う)。
+    /// </summary>
+    public IEnumerable<(string Section, IApiKeySettings Settings)> ApiKeySettings()
+    {
+        yield return (nameof(AzureOpenAI), AzureOpenAI);
+        yield return (nameof(Gemini), Gemini);
+        yield return (nameof(OpenAiCompatible), OpenAiCompatible);
+    }
 }
