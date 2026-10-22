@@ -30,9 +30,15 @@ public sealed class SelectionCapture
     {
         var sourceWindow = NativeMethods.GetForegroundWindow();
 
-        // Ctrl+Cの結果と、元々クリップボードにあった内容を区別するために一度クリアする。
-        var previous = TryGetClipboardText();
-        TryClearClipboard();
+        // Ctrl+Cで上書きされる前に、元の内容を全形式ぶん退避しておく。
+        // 直前の書き戻しの復元待ちがある場合、今のクリップボードは一時的な整形結果にすぎないため、
+        // 復元待ちの内容(本来の元内容)を引き継ぐ。その場合はCtrl+Cの成否に関わらず必ず書き戻す。
+        var pendingOriginal = ClipboardRestoreScheduler.TakeOriginal(_logger);
+        var original = pendingOriginal ?? ClipboardSnapshot.Capture(_logger);
+
+        // 以前はCtrl+Cの結果と元の内容を区別するためにクリップボードを一度空にしていたが、
+        // それだと空にした時点で元の内容が失われる。更新回数の変化で判定すれば空にしなくてよい。
+        var sequenceBefore = ClipboardSnapshot.CurrentSequenceNumber;
 
         SendCtrlC();
 
@@ -42,6 +48,11 @@ public sealed class SelectionCapture
         for (var i = 0; i < 12; i++)
         {
             await Task.Delay(60, ct);
+            if (ClipboardSnapshot.CurrentSequenceNumber == sequenceBefore)
+            {
+                continue;
+            }
+
             text = TryGetClipboardText();
             if (!string.IsNullOrEmpty(text))
             {
@@ -49,10 +60,13 @@ public sealed class SelectionCapture
             }
         }
 
-        // 取得できてもできなくても、元のクリップボード内容は戻す。
-        if (previous is not null)
+        // 取得できてもできなくても、クリップボードが変わっていれば元の内容に戻す。
+        // ここでは更新回数による上書き防止は行わない。遅延レンダリングのアプリでは
+        // 内容を読み出しただけで更新回数が進むことがあり、復元漏れの原因になるため
+        // (Ctrl+C送出から1秒弱の間にユーザーがコピーすることはまずない)。
+        if (pendingOriginal is not null || ClipboardSnapshot.CurrentSequenceNumber != sequenceBefore)
         {
-            TrySetClipboardText(previous);
+            RestoreOriginal(original);
         }
 
         if (string.IsNullOrWhiteSpace(text))
@@ -97,35 +111,18 @@ public sealed class SelectionCapture
         return null;
     }
 
-    private static void TryClearClipboard()
+    private void RestoreOriginal(ClipboardSnapshot? original)
     {
-        for (var i = 0; i < 5; i++)
+        if (original is null)
         {
-            try
-            {
-                System.Windows.Forms.Clipboard.Clear();
-                return;
-            }
-            catch (ExternalException)
-            {
-                Thread.Sleep(20);
-            }
+            _logger.Warn("元のクリップボード内容を退避できていなかったため、復元できません。");
+            return;
         }
-    }
 
-    private static void TrySetClipboardText(string text)
-    {
-        for (var i = 0; i < 5; i++)
+        var result = original.WriteToClipboard();
+        if (result != ClipboardWriteResult.Written)
         {
-            try
-            {
-                System.Windows.Forms.Clipboard.SetText(text);
-                return;
-            }
-            catch (ExternalException)
-            {
-                Thread.Sleep(20);
-            }
+            _logger.Warn($"選択テキスト取得後のクリップボードの復元に失敗しました({result})。");
         }
     }
 }

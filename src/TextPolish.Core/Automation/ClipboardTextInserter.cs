@@ -30,17 +30,36 @@ public sealed class ClipboardTextInserter : ITextInserter
             return false;
         }
 
-        string? originalClipboardText = null;
+        ClipboardSnapshot? original = null;
+        uint? writtenSequence = null;
 
         try
         {
-            originalClipboardText = TryGetClipboardText();
+            if (_restoreClipboard)
+            {
+                // 直前の書き戻しの復元待ちがあれば、今のクリップボードは一時的な整形結果にすぎない。
+                // その場合は復元待ちの内容こそが本来の元内容なので、そちらを引き継ぐ。
+                original = ClipboardRestoreScheduler.TakeOriginal(_logger) ?? ClipboardSnapshot.Capture(_logger);
+            }
 
-            if (!TrySetClipboardText(text))
+            var sequenceBefore = ClipboardSnapshot.CurrentSequenceNumber;
+            var writeResult = ClipboardSnapshot.FromText(text).WriteToClipboard();
+
+            if (writeResult != ClipboardWriteResult.Written)
             {
                 _logger.Error("クリップボードへのテキスト設定に失敗しました。挿入を中止します。");
+
+                // 途中まで書き換えてしまった(空にした)可能性があるため、変化していれば即座に戻す。
+                if (original is not null && ClipboardSnapshot.CurrentSequenceNumber != sequenceBefore)
+                {
+                    original.WriteToClipboard();
+                }
+
                 return false;
             }
+
+            // この値から変わっていれば、復元までの間に誰か(主にユーザー)がコピーしたことになる。
+            writtenSequence = ClipboardSnapshot.CurrentSequenceNumber;
 
             await Task.Delay(50, ct);
 
@@ -72,7 +91,10 @@ public sealed class ClipboardTextInserter : ITextInserter
         }
         finally
         {
-            RestoreClipboardLater(originalClipboardText);
+            if (original is not null && writtenSequence is uint sequence)
+            {
+                RestoreClipboardLater(original, sequence);
+            }
         }
     }
 
@@ -84,74 +106,12 @@ public sealed class ClipboardTextInserter : ITextInserter
     /// 貼り付けられてしまう。実際にこの競合で、認識結果ではなく編集中にコピーしていた
     /// 文字列が挿入される不具合が発生したため、十分な待ち時間を空けてから復元する。
     ///
-    /// 待っている間ユーザーの操作を止めないよう、復元はバックグラウンドで行う。
+    /// 待っている間にユーザーが新たにコピーした内容は上書きしない
+    /// (<see cref="ClipboardRestoreScheduler"/>参照)。
     /// </summary>
-    private void RestoreClipboardLater(string? originalClipboardText)
+    private void RestoreClipboardLater(ClipboardSnapshot original, uint writtenSequence)
     {
-        if (!_restoreClipboard || originalClipboardText is null)
-        {
-            return;
-        }
-
-        // Clipboard APIはSTAスレッドからしか呼べないため、スレッドプール(MTA)ではなく
-        // 専用のSTAスレッドで復元する。
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                Thread.Sleep(_restoreDelayMs);
-                TrySetClipboardText(originalClipboardText);
-            }
-            catch (Exception ex)
-            {
-                // 元のクリップボード内容の復元失敗は致命的ではない。
-                _logger.Warn($"クリップボードの復元に失敗しました: {ex.Message}");
-            }
-        })
-        {
-            IsBackground = true,
-        };
-
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-    }
-
-    private static string? TryGetClipboardText()
-    {
-        for (var i = 0; i < 5; i++)
-        {
-            try
-            {
-                return System.Windows.Forms.Clipboard.ContainsText()
-                    ? System.Windows.Forms.Clipboard.GetText()
-                    : null;
-            }
-            catch (ExternalException)
-            {
-                // 他プロセスがクリップボードを保持している場合があるため短時間リトライする。
-                Thread.Sleep(20);
-            }
-        }
-
-        return null;
-    }
-
-    private static bool TrySetClipboardText(string text)
-    {
-        for (var i = 0; i < 5; i++)
-        {
-            try
-            {
-                System.Windows.Forms.Clipboard.SetText(text);
-                return true;
-            }
-            catch (ExternalException)
-            {
-                Thread.Sleep(20);
-            }
-        }
-
-        return false;
+        ClipboardRestoreScheduler.Schedule(original, writtenSequence, _restoreDelayMs, _logger);
     }
 
     private static uint SendCtrlV()

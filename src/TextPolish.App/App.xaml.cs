@@ -383,6 +383,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // 書き戻し直後に終了した場合でも、元のクリップボード内容を戻してから終わる。
+        ClipboardRestoreScheduler.RestorePendingNow();
+
         _trayIconManager?.Dispose();
 
         if (_polishHotkeyService is not null)
