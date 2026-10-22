@@ -13,4 +13,8 @@
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TextPolish.Tests" />
+  </ItemGroup>
+
 </Project>
