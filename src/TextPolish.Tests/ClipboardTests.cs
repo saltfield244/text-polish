@@ -119,8 +119,9 @@ internal static class ClipboardTests
         Assert.Equal(files[0], restored[0], "1件目");
         Assert.Equal(files[1], restored[1], "2件目");
 
-        var effect = Clipboard.GetData(DropEffectFormat) as MemoryStream;
-        Assert.True(effect is not null, "Preferred DropEffect が復元されていない");
+        Assert.True(
+            Clipboard.TryGetData(DropEffectFormat, out MemoryStream? effect) && effect is not null,
+            "Preferred DropEffect が復元されていない");
         Assert.Equal(2, BitConverter.ToInt32(effect!.ToArray(), 0), "切り取り/コピーの区別");
     }
 
