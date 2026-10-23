@@ -121,14 +121,15 @@ public partial class App : Application
                 return;
             }
 
-            var context = new ActiveWindowContextProvider(_logger).GetContext();
+            var context = new ActiveWindowContextProvider(_logger)
+                .GetContext(_settings.Polish.SendSurroundingContext);
             var surroundingContext = BuildSurroundingContext(context.SurroundingText, selection.Text);
 
-            // 周辺文脈はUI Automation非対応のアプリでは取得できない。取れているかどうかで
-            // 整形精度が変わるため、切り分けられるようログに残す。
+            // 周辺文脈は設定で無効にでき、UI Automation非対応のアプリでは取得もできない。
+            // 何をLLMへ送ったかを後から確かめられるよう、理由が分かる形でログに残す。
             _logger.Info(
                 $"アクティブアプリ: {context.AppName ?? "(不明)"} / " +
-                $"周辺文脈: {(surroundingContext is null ? "なし" : $"{surroundingContext.Length}文字")}");
+                $"周辺文脈: {DescribeSurroundingContext(surroundingContext)}");
 
             _paletteWindow = new PaletteWindow(
                 selection,
@@ -233,8 +234,13 @@ public partial class App : Application
                 return;
             }
 
-            var context = new ActiveWindowContextProvider(_logger).GetContext();
+            var context = new ActiveWindowContextProvider(_logger)
+                .GetContext(_settings.Polish.SendSurroundingContext);
             var surroundingContext = BuildSurroundingContext(context.SurroundingText, selection.Text);
+
+            _logger.Info(
+                $"アクティブアプリ: {context.AppName ?? "(不明)"} / " +
+                $"周辺文脈: {DescribeSurroundingContext(surroundingContext)}");
 
             _trayIconManager.SetStatus($"「{preset.Name}」で整形中...");
 
@@ -338,6 +344,17 @@ public partial class App : Application
     /// 選択が長く周辺テキスト側が途中で切れている場合は一致せず除去されないが、
     /// その場合も参考情報として害はないのでそのまま渡す。
     /// </summary>
+    /// <summary>周辺文脈を送ったかどうかをログで切り分けられるようにする。</summary>
+    private string DescribeSurroundingContext(string? surroundingContext)
+    {
+        if (!_settings.Polish.SendSurroundingContext)
+        {
+            return "送信しない設定(SendSurroundingContext=false)";
+        }
+
+        return surroundingContext is null ? "なし(取得できず)" : $"{surroundingContext.Length}文字";
+    }
+
     private static string? BuildSurroundingContext(string? surroundingText, string selectionText)
     {
         if (string.IsNullOrWhiteSpace(surroundingText))

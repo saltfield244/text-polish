@@ -26,6 +26,7 @@ internal static class Program
         tests.AddRange(LlmResponseTests.All());
         tests.AddRange(PolishResultTests.All());
         tests.AddRange(PasteTargetTests.All());
+        tests.AddRange(PromptTests.All());
         if (includeClipboard)
         {
             tests.AddRange(ClipboardTests.All());

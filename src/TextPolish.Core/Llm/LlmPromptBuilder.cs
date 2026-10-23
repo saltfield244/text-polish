@@ -2,7 +2,11 @@ using System.Text;
 
 namespace TextPolish.Core.Llm;
 
-internal static class LlmPromptBuilder
+/// <summary>
+/// LLMへ渡すユーザープロンプトの組み立て。
+/// 何がLLMへ送られるかはプライバシー上も重要なので、純粋な関数にして回帰テストで固定している。
+/// </summary>
+public static class LlmPromptBuilder
 {
     public static string BuildUserPrompt(LlmFormatRequest request)
     {

@@ -40,6 +40,8 @@ internal static class SettingsTests
         yield return ("設定: 別プロバイダの暗号文を書き写しても復号できない", ProtectedValueIsBoundToProvider);
         yield return ("設定: 保存に失敗しても元のファイルとキーは失われない", FailedSaveKeepsOriginal);
         yield return ("設定: 長いトークン・非ASCIIのキーも往復できる", LongAndNonAsciiKeysRoundTrip);
+        yield return ("設定: 周辺文脈の送信は既定でオフ", SurroundingContextIsOffByDefault);
+        yield return ("設定: 周辺文脈の設定が保存・読み込みで往復する", SurroundingContextRoundTrips);
     }
 
     private static void LegacyPlainTextIsMigrated()
@@ -237,6 +239,43 @@ internal static class SettingsTests
         var reloaded = AppSettingsLoader.Load(path);
         Assert.Equal(longToken, reloaded.Gemini.ApiKey, "長いトークン");
         Assert.Equal("日本語を含むキー🔑", reloaded.AzureOpenAI.ApiKey, "非ASCIIのキー");
+    }
+
+    /// <summary>
+    /// 既定は「送らない」。旧バージョンの設定ファイル(この項目がない)を読んでもオフになる。
+    /// 精度より、選択していない文章を外部へ送らないほうを既定にする判断。
+    /// </summary>
+    private static void SurroundingContextIsOffByDefault()
+    {
+        Assert.True(new AppSettings().Polish.SendSurroundingContext == false, "新規設定の既定値");
+
+        using var dir = new TempDir();
+        var path = dir.Write(LegacyJson);
+
+        var settings = AppSettingsLoader.Load(path, new NullLogger());
+        Assert.True(
+            settings.Polish.SendSurroundingContext == false,
+            "項目のない旧設定ファイルを読んだ場合");
+    }
+
+    private static void SurroundingContextRoundTrips()
+    {
+        using var dir = new TempDir();
+        var path = dir.Write(LegacyJson);
+
+        var settings = AppSettingsLoader.Load(path, new NullLogger());
+        settings.Polish.SendSurroundingContext = true;
+        AppSettingsLoader.Save(path, settings);
+
+        var reloaded = AppSettingsLoader.Load(path, new NullLogger());
+        Assert.True(reloaded.Polish.SendSurroundingContext, "オンにして保存した場合");
+
+        reloaded.Polish.SendSurroundingContext = false;
+        AppSettingsLoader.Save(path, reloaded);
+
+        Assert.True(
+            AppSettingsLoader.Load(path, new NullLogger()).Polish.SendSurroundingContext == false,
+            "オフに戻して保存した場合");
     }
 
     private static void AssertNoPlainTextSecrets(string path, params string[] secrets)

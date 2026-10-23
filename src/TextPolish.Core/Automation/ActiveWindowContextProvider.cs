@@ -26,7 +26,7 @@ public sealed class ActiveWindowContextProvider : IActiveWindowContextProvider
         _logger = logger;
     }
 
-    public ActiveWindowContext GetContext()
+    public ActiveWindowContext GetContext(bool includeSurroundingText)
     {
         string? appName = null;
         string? surroundingText = null;
@@ -50,14 +50,19 @@ public sealed class ActiveWindowContextProvider : IActiveWindowContextProvider
                 _logger.Warn($"アクティブウィンドウのプロセス名取得に失敗しました: {ex.Message}");
             }
 
-            try
+            // 送らない設定のときは読み出しもしない。読んでから捨てる作りにすると、
+            // 送信しない約束がコードの離れた場所(呼び出し元)に依存してしまう。
+            if (includeSurroundingText)
             {
-                surroundingText = TryGetSurroundingText();
-            }
-            catch (Exception ex)
-            {
-                // UI Automationでの取得失敗はコンテキストなしとして扱い、パイプライン全体は継続する。
-                _logger.Warn($"UI Automationによるカーソル周辺テキスト取得に失敗しました: {ex.Message}");
+                try
+                {
+                    surroundingText = TryGetSurroundingText();
+                }
+                catch (Exception ex)
+                {
+                    // UI Automationでの取得失敗はコンテキストなしとして扱い、パイプライン全体は継続する。
+                    _logger.Warn($"UI Automationによるカーソル周辺テキスト取得に失敗しました: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)

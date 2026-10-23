@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
         QuickHotkeyTextBox.Text = _pendingQuickHotkey;
         EnablePolishCheckBox.IsChecked = settings.Polish.Enabled;
         ShowDiffCheckBox.IsChecked = settings.Polish.ShowDiffByDefault;
+        SendSurroundingContextCheckBox.IsChecked = settings.Polish.SendSurroundingContext;
         LoadQuickPresets();
         PresetSummaryText.Text = "登録済み: " +
             string.Join(" / ", settings.Polish.Presets.Select(p => p.Name));
@@ -183,6 +184,7 @@ public partial class SettingsWindow : Window
         _settings.Polish.Enabled = EnablePolishCheckBox.IsChecked == true;
         _settings.Polish.Hotkey = _pendingPolishHotkey;
         _settings.Polish.ShowDiffByDefault = ShowDiffCheckBox.IsChecked == true;
+        _settings.Polish.SendSurroundingContext = SendSurroundingContextCheckBox.IsChecked == true;
         _settings.Polish.QuickHotkey = _pendingQuickHotkey;
         _settings.Polish.QuickPresetName =
             QuickPresetCombo.SelectedItem as string ?? _settings.Polish.QuickPresetName;

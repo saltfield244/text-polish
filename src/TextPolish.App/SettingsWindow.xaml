@@ -40,6 +40,12 @@
                     <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
                                Text="変更箇所を色分けして表示します。パレット上でも切り替えられます。書き換えが大きい場合(要約・翻訳など)は、差分が読めなくなるため自動的に表示されません。"/>
 
+                    <TextBlock Text="LLMへ送る範囲" Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
+                    <CheckBox x:Name="SendSurroundingContextCheckBox"
+                              Content="選択範囲の周辺にある文章も参考情報として送る"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
+                               Text="入力欄に書かれている文章のうち、選択していない部分(最大500文字)もLLMへ送ります。前後のつながりが分かるため誤変換の修正精度が上がりますが、選択していない文章も外部のLLMプロバイダへ送信されます。オフのときは読み取り自体を行いません。アプリ名による文体の切り替えは、この設定に関わらず有効です。"/>
+
                     <TextBlock Text="即実行(パレットを出さずに整形して置き換える)"
                                Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
                     <TextBlock Text="ホットキー" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
