@@ -23,6 +23,7 @@ internal static class Program
         var tests = new List<(string Name, Action Body)>();
         tests.AddRange(SettingsTests.All());
         tests.AddRange(OperationGateTests.All());
+        tests.AddRange(LlmResponseTests.All());
         if (includeClipboard)
         {
             tests.AddRange(ClipboardTests.All());

@@ -1,7 +1,6 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json;
 using TextPolish.Core.Configuration;
 using TextPolish.Core.Logging;
 
@@ -78,22 +77,19 @@ public sealed class GeminiFormatter : ILlmFormatter
                 throw new InvalidOperationException($"Gemini呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
-            using var doc = JsonDocument.Parse(responseText);
-            var text = doc.RootElement
-                .GetProperty("candidates")[0]
-                .GetProperty("content")
-                .GetProperty("parts")[0]
-                .GetProperty("text")
-                .GetString();
+            // finishReason を見て、MAX_TOKENS 等で打ち切られた文章を採用しないようにする。
+            // 原文へのフォールバックもしない(黙って未整形のまま置換されるのを避けるため)。
+            var parsed = LlmResponseReader.ReadGemini(responseText);
 
-            // 原文へのフォールバックはしない(黙って未整形のまま置換されるのを避けるため)。
-            if (string.IsNullOrWhiteSpace(text))
+            if (parsed.RejectionReason is { } rejection)
             {
-                _logger.Error($"Gemini の応答に整形結果が含まれていませんでした。Body={responseText}");
-                throw new InvalidOperationException("整形結果が空でした。");
+                _logger.Error(
+                    $"Gemini の応答を整形結果として採用できませんでした" +
+                    $"(判定={parsed.Status} finishReason={parsed.FinishReason ?? "(なし)"})。Body={responseText}");
+                throw new InvalidOperationException(rejection);
             }
 
-            return text;
+            return parsed.Text!;
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {

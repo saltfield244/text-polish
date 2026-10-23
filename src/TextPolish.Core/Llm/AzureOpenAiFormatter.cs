@@ -1,6 +1,5 @@
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Text.Json;
 using TextPolish.Core.Configuration;
 using TextPolish.Core.Logging;
 
@@ -63,25 +62,19 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
                 throw new InvalidOperationException($"Azure OpenAI呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
-            using var doc = JsonDocument.Parse(responseText);
-            var content = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
+            // finish_reason を見て、途中で打ち切られた文章を採用しないようにする。
+            // 原文へのフォールバックもしない(OpenAiCompatibleFormatter と同じ理由)。
+            var parsed = LlmResponseReader.ReadChatCompletion(responseText);
 
-            // 原文へのフォールバックはしない。推論モデルは出力上限に達すると推論トークンだけを
-            // 消費して content が空になることがあり、黙って原文を返すと「整形したのに
-            // 変わっていない」テキストがそのまま置換されてしまうため。
-            if (string.IsNullOrWhiteSpace(content))
+            if (parsed.RejectionReason is { } rejection)
             {
-                _logger.Error($"Azure OpenAI の応答に整形結果が含まれていませんでした。Body={responseText}");
-                throw new InvalidOperationException(
-                    "整形結果が空でした。出力上限に達した可能性があります。" +
-                    "MaxCompletionTokens を増やすか ReasoningEffort を下げてください。");
+                _logger.Error(
+                    $"Azure OpenAI の応答を整形結果として採用できませんでした" +
+                    $"(判定={parsed.Status} finish_reason={parsed.FinishReason ?? "(なし)"})。Body={responseText}");
+                throw new InvalidOperationException(rejection);
             }
 
-            return content;
+            return parsed.Text!;
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
