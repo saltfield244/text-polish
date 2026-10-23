@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <UseWPF>true</UseWPF>
     <!-- NotifyIcon(トレイ常駐)にSystem.Windows.Forms.NotifyIconを使うため -->
     <UseWindowsForms>true</UseWindowsForms>

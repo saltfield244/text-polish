@@ -119,6 +119,8 @@ dotnet publish src\TextPolish.App\TextPolish.App.csproj -c Release -r win-x64 --
 
 publish は `appsettings.json` も上書きします(`CopyToOutputDirectory=PreserveNewest`)。
 配布先で設定したAPIキーが失われるため、**上書き前に退避してください**。
+`Glossary.txt` と `PolishSystemPrompt.txt` も同様です。
+既存の環境を更新する手順は **README-更新手順.md** にまとめています。
 
 ### 整形が失敗する
 ログにHTTPステータスが出ます。401はAPIキーの誤り、404はモデル名かエンドポイントの誤りです。
@@ -157,3 +159,11 @@ src\
 
 設計上の判断や、開発過程で得られた知見は
 **IMPLEMENTATION-NOTES.md** に記載しています。
+
+| ドキュメント | 内容 |
+|---|---|
+| `CHANGELOG.md` | 変更履歴 |
+| `README-更新手順.md` | 既存利用者の更新手順(設定を失わない入れ替え方) |
+| `RELEASE-チェックリスト.md` | 公開前に終わらせる検証項目と公開の判断条件 |
+| `src/TextPolish.Tests/README.md` | 回帰テストの実行方法と、Windows実機での確認手順 |
+| `IMPLEMENTATION-NOTES.md` | 設計上の判断と、開発過程で得られた知見 |
