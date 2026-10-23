@@ -24,8 +24,15 @@ public partial class App : Application
     private PaletteWindow? _paletteWindow;
     private InstructionHistory _history = null!;
 
-    /// <summary>即実行の多重起動を防ぐ。パレットと違い画面が出ないため状態が見えない。</summary>
-    private bool _quickRunning;
+    private const string PaletteOperationName = "整形パレット";
+    private const string QuickOperationName = "即実行";
+
+    /// <summary>
+    /// パレットと即実行で共有する排他。選択テキストの取得を始める前から、
+    /// 書き戻し(パレットは閉じるまで)が終わるまで保持する。
+    /// ホットキーの連打や、経路をまたいだ同時実行で取得処理が重複するのを防ぐ。
+    /// </summary>
+    private readonly OperationGate _operationGate = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -78,12 +85,24 @@ public partial class App : Application
 
     private async void OnPolishHotkey(object? sender, EventArgs e)
     {
-        // 二重起動を防ぐ。既に開いていれば前面に出すだけ。
+        // 既に開いていれば前面に出すだけ。
         if (_paletteWindow is not null)
         {
             _paletteWindow.Activate();
             return;
         }
+
+        // 選択テキストの取得を始める前に排他を取る。パレットのウィンドウは取得の完了後に
+        // 生成されるため、上の判定だけでは取得中の再入力を防げない。
+        var lease = _operationGate.TryAcquire(PaletteOperationName);
+        if (lease is null)
+        {
+            _logger.Info($"ほかの操作({_operationGate.CurrentOwner ?? "処理中"})が実行中のため、整形パレットの起動を無視しました。");
+            return;
+        }
+
+        // パレットを表示できたら、排他の解放はパレットを閉じたときに行う(整形・書き戻しの間も保持する)。
+        var leaseHandedToPalette = false;
 
         try
         {
@@ -124,10 +143,12 @@ public partial class App : Application
             _paletteWindow.Closed += (_, _) =>
             {
                 _paletteWindow = null;
+                lease.Dispose();
                 _trayIconManager.SetStatus("待機中");
             };
 
             _paletteWindow.Show();
+            leaseHandedToPalette = true;
             _paletteWindow.Activate();
             _trayIconManager.SetStatus("整形パレット表示中");
         }
@@ -136,6 +157,15 @@ public partial class App : Application
             _logger.Error("整形パレットの表示に失敗しました。", ex);
             _trayIconManager.SetStatus("エラー");
             _paletteWindow = null;
+        }
+        finally
+        {
+            // 取得できなかった場合・例外で表示できなかった場合は、ここで解放して次の操作を受け付ける。
+            // Closed からも呼ばれ得るが、解放は1回だけ行われる。
+            if (!leaseHandedToPalette)
+            {
+                lease.Dispose();
+            }
         }
     }
 
@@ -169,12 +199,13 @@ public partial class App : Application
     /// </summary>
     private async void OnQuickHotkey(object? sender, EventArgs e)
     {
-        if (_quickRunning || _paletteWindow is not null)
+        // パレットと共通の排他。連打も、パレットの取得中・表示中も、ここで安全に無視する。
+        var lease = _operationGate.TryAcquire(QuickOperationName);
+        if (lease is null)
         {
+            _logger.Info($"ほかの操作({_operationGate.CurrentOwner ?? "処理中"})が実行中のため、即実行を無視しました。");
             return;
         }
-
-        _quickRunning = true;
 
         try
         {
@@ -245,7 +276,8 @@ public partial class App : Application
         }
         finally
         {
-            _quickRunning = false;
+            // 例外・キャンセル・途中の return のいずれでも必ず解放する。
+            lease.Dispose();
             _trayIconManager.SetStatus("待機中");
         }
     }
