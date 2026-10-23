@@ -249,23 +249,34 @@ public partial class App : Application
 
             // パレット経由と違い、こちらは自分でフォーカスを奪っていないが、
             // 整形中にユーザーが別のウィンドウへ移っている可能性があるため戻しておく。
-            if (!WindowFocus.Restore(selection.SourceWindow))
+            // 戻せなかった場合は、関係のないウィンドウへ貼り付けるより中止するほうが安全。
+            if (!await WindowFocus.RestoreAsync(selection.SourceWindow))
             {
-                _logger.Warn("元のウィンドウへフォーカスを戻せませんでした。書き戻しに失敗する可能性があります。");
+                _logger.Error("元のウィンドウへフォーカスを戻せなかったため、書き戻しを中止しました。");
+                PreserveResultInClipboard(result, "元のウィンドウへ戻せませんでした");
+                return;
             }
 
             await Task.Delay(150);
 
-            var inserted = await CreateTextInserter().InsertAsync(result);
-            if (inserted)
+            var insertResult = await CreateTextInserter().InsertAsync(result, selection.SourceWindow);
+            switch (insertResult)
             {
-                _logger.Info($"即実行で整形しました({preset.Name})。{selection.Text.Length}文字 → {result.Length}文字");
-            }
-            else
-            {
-                _logger.Error("即実行の書き戻しに失敗しました。");
-                _trayIconManager.ShowBalloon(
-                    "テキスト整形ツール", "整形結果の書き戻しに失敗しました。", ToolTipIcon.Error);
+                case TextInsertResult.Inserted:
+                    _logger.Info(
+                        $"即実行で整形しました({preset.Name})。{selection.Text.Length}文字 → {result.Length}文字");
+                    break;
+
+                case TextInsertResult.TargetWindowChanged:
+                    // 書き戻しはしていない。整形結果を捨てずに、手で貼り付けられる形にして渡す。
+                    PreserveResultInClipboard(result, "書き戻し先のウィンドウが変わりました");
+                    break;
+
+                default:
+                    _logger.Error($"即実行の書き戻しに失敗しました({insertResult})。");
+                    _trayIconManager.ShowBalloon(
+                        "テキスト整形ツール", "整形結果の書き戻しに失敗しました。", ToolTipIcon.Error);
+                    break;
             }
         }
         catch (Exception ex)
@@ -280,6 +291,34 @@ public partial class App : Application
             lease.Dispose();
             _trayIconManager.SetStatus("待機中");
         }
+    }
+
+    /// <summary>
+    /// 書き戻しを中止したときに、整形結果を失わないようクリップボードへ退避する。
+    ///
+    /// 即実行にはパレットのような結果の置き場がないため、中止するとLLMの応答がそのまま
+    /// 消えてしまう。手で Ctrl+V できる状態にしておき、何が起きたかを通知で伝える。
+    /// 元のクリップボード内容は整形結果で置き換わるので、その点もログに残す。
+    /// </summary>
+    private void PreserveResultInClipboard(string result, string reason)
+    {
+        var written = ClipboardSnapshot.FromText(result).WriteToClipboard();
+
+        if (written == ClipboardWriteResult.Written)
+        {
+            _logger.Info("書き戻しを中止したため、整形結果をクリップボードへ退避しました(元の内容は上書きされます)。");
+            _trayIconManager.ShowBalloon(
+                "テキスト整形ツール",
+                $"{reason}。書き戻しは中止しました。整形結果はクリップボードにあります(Ctrl+Vで貼り付けられます)。",
+                ToolTipIcon.Warning);
+            return;
+        }
+
+        _logger.Error($"整形結果をクリップボードへ退避できませんでした({written})。");
+        _trayIconManager.ShowBalloon(
+            "テキスト整形ツール",
+            $"{reason}。書き戻しを中止しましたが、整形結果を保持できませんでした。もう一度実行してください。",
+            ToolTipIcon.Error);
     }
 
     private FormatPreset? ResolveQuickPreset()

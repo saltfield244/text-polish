@@ -30,6 +30,7 @@ internal static class ClipboardTests
         yield return ("遅延復元: 連続実行では最初の元内容を引き継ぐ", ConsecutiveRunsKeepFirstOriginal);
         yield return ("遅延復元: 引き継ぎ時にユーザーのコピーがあれば元内容を捨てる", TakeOriginalAfterUserCopy);
         yield return ("遅延復元: 終了時は待たずに復元する", RestorePendingNowRestores);
+        yield return ("書き戻し: 貼り付け先が違えば送出せずクリップボードを戻す", InsertAbortsWhenTargetWindowIsGone);
     }
 
     private static void TextRoundTrip()
@@ -243,6 +244,30 @@ internal static class ClipboardTests
 
         ClipboardRestoreScheduler.RestorePendingNow();
         Assert.Equal("元の内容", Clipboard.GetText(), "即時復元");
+    }
+
+    /// <summary>
+    /// 取得元のウィンドウが存在しない場合、Ctrl+V を送らずに中止し、
+    /// クリップボードを元の内容へ戻すこと。
+    ///
+    /// 整形結果がクリップボードに残ったままにならないこと(＝利用者が次に貼り付けたときに
+    /// 意図しない文章が入らないこと)と、中止しても元の内容を失わないことの両方を見る。
+    /// 存在しないハンドルを渡すため、実際にキー送出は起こらない。
+    /// </summary>
+    private static void InsertAbortsWhenTargetWindowIsGone()
+    {
+        Clipboard.SetText("利用者がコピーしていた内容");
+
+        var logger = new NullLogger();
+        var inserter = new ClipboardTextInserter(logger, restoreClipboard: true, restoreDelayMs: 60_000);
+
+        var result = inserter
+            .InsertAsync("整形結果(貼り付けてはいけない)", expectedWindow: new IntPtr(0x1234))
+            .GetAwaiter()
+            .GetResult();
+
+        Assert.Equal(TextInsertResult.TargetWindowChanged, result, "書き戻しの結果");
+        Assert.Equal("利用者がコピーしていた内容", Clipboard.GetText(), "中止後のクリップボード");
     }
 
     private static ClipboardSnapshot CaptureOrFail() =>

@@ -297,24 +297,58 @@ public partial class PaletteWindow : Window
             return;
         }
 
-        // パレットを閉じてから、取得元のウィンドウへフォーカスを戻す。
+        // パレットを隠してから、取得元のウィンドウへフォーカスを戻す。
         // 選択状態が残っているため、貼り付けで置換になる。
+        // 閉じずに隠すのは、書き戻せなかったときに結果を表示したまま再試行できるようにするため。
         Hide();
 
-        if (!WindowFocus.Restore(_selection.SourceWindow))
+        if (!await WindowFocus.RestoreAsync(_selection.SourceWindow))
         {
-            _logger.Warn("元のウィンドウへフォーカスを戻せませんでした。書き戻しに失敗する可能性があります。");
+            _logger.Error("元のウィンドウへフォーカスを戻せなかったため、書き戻しを中止しました。");
+            ShowAgain(
+                "元のウィンドウへ戻せなかったため、書き戻しを中止しました。" +
+                "元のウィンドウをクリックして選択し直してから、もう一度「置き換える」を押してください。");
+            return;
         }
 
         await Task.Delay(150);
 
-        var inserted = await _textInserter.InsertAsync(text);
-        if (!inserted)
+        var insertResult = await _textInserter.InsertAsync(text, _selection.SourceWindow);
+        if (insertResult != TextInsertResult.Inserted)
         {
-            _logger.Error("整形結果の書き戻しに失敗しました。");
+            _logger.Error($"整形結果の書き戻しに失敗しました({insertResult})。");
+            ShowAgain(DescribeInsertFailure(insertResult));
+            return;
         }
 
         Close();
+    }
+
+    private static string DescribeInsertFailure(TextInsertResult result) => result switch
+    {
+        TextInsertResult.TargetWindowChanged =>
+            "書き戻し先が元のウィンドウではなくなっていたため、中止しました。" +
+            "整形結果はこのまま残っています。元のウィンドウで選択し直してから、もう一度「置き換える」を押してください。",
+
+        TextInsertResult.ClipboardFailed =>
+            "クリップボードを使えなかったため、書き戻しを中止しました。" +
+            "ほかのアプリがクリップボードを使っていないか確かめて、もう一度お試しください。",
+
+        _ =>
+            "書き戻しに失敗しました。整形結果はこのまま残っています。" +
+            "元のウィンドウで選択し直してから、もう一度「置き換える」を押してください。",
+    };
+
+    /// <summary>
+    /// 書き戻しを中止したあと、整形結果を保ったままパレットを出し直す。
+    /// 結果を捨ててしまうと、LLMの呼び出しをやり直すことになるため。
+    /// </summary>
+    private void ShowAgain(string status)
+    {
+        Show();
+        Activate();
+        StatusText.Text = status;
+        ApplyButton.IsEnabled = !string.IsNullOrWhiteSpace(ResultTextBox.Text);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

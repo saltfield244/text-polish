@@ -23,15 +23,20 @@ public sealed class ClipboardTextInserter : ITextInserter
         _restoreDelayMs = restoreDelayMs;
     }
 
-    public async Task<bool> InsertAsync(string text, CancellationToken ct = default)
+    public async Task<TextInsertResult> InsertAsync(
+        string text, IntPtr expectedWindow = default, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(text))
         {
-            return false;
+            return TextInsertResult.EmptyText;
         }
 
         ClipboardSnapshot? original = null;
         uint? writtenSequence = null;
+
+        // 遅延復元を予約するのは、実際に Ctrl+V を送った場合だけ。
+        // 送らずに中止した場合は、待たずにその場で元の内容へ戻す。
+        var pasteSent = false;
 
         try
         {
@@ -55,7 +60,7 @@ public sealed class ClipboardTextInserter : ITextInserter
                     original.WriteToClipboard();
                 }
 
-                return false;
+                return TextInsertResult.ClipboardFailed;
             }
 
             // この値から変わっていれば、復元までの間に誰か(主にユーザー)がコピーしたことになる。
@@ -64,6 +69,29 @@ public sealed class ClipboardTextInserter : ITextInserter
             await Task.Delay(50, ct);
 
             var foregroundBefore = NativeMethods.GetForegroundWindowTitle();
+
+            // Ctrl+V は「送出した瞬間に前面にあるウィンドウ」へ届く。整形に数秒かかるため、
+            // その間に利用者が別のアプリへ移っていることも、フォーカス復帰が実際には
+            // 効いていないこともある。送出の直前に照合し、違っていれば何も貼り付けない。
+            var targetCheck = PasteTarget.Check(
+                expectedWindow, NativeMethods.GetForegroundWindow(), NativeMethods.IsWindow(expectedWindow));
+
+            if (targetCheck is PasteTargetCheck.Mismatch or PasteTargetCheck.WindowGone)
+            {
+                _logger.Error(
+                    $"貼り付け先が取得元のウィンドウではないため、書き戻しを中止しました({targetCheck})。" +
+                    $"取得元: 0x{expectedWindow:X} / 現在のフォアグラウンド: {foregroundBefore}");
+
+                // ここでは整形結果を貼り付けていないので、クリップボードは元の内容に戻す。
+                // 整形結果は呼び出し元が保持している(パレットは画面に残し、即実行は
+                // クリップボードへ退避する)ため、失われない。
+                return TextInsertResult.TargetWindowChanged;
+            }
+
+            if (targetCheck == PasteTargetCheck.NotVerified)
+            {
+                _logger.Warn("取得元のウィンドウが分からないため、貼り付け先の照合を省略しました。");
+            }
 
             var sent = SendCtrlV();
             // GetLastWin32Errorは直後に取得すること(間に他のWin32呼び出しを挟むと上書きされる)。
@@ -76,24 +104,35 @@ public sealed class ClipboardTextInserter : ITextInserter
                 _logger.Error(
                     $"SendInputが1件も送出できませんでした(Win32Error={err})。" +
                     $"送出先フォアグラウンド: {foregroundBefore}");
-                return false;
+                return TextInsertResult.SendFailed;
             }
+
+            pasteSent = true;
 
             _logger.Info(
                 $"テキストを挿入しました(クリップボード+Ctrl+V)。文字数: {text.Length}。" +
                 $"送出先フォアグラウンド: {foregroundBefore}");
-            return true;
+            return TextInsertResult.Inserted;
         }
         catch (Exception ex)
         {
             _logger.Error("テキスト挿入(クリップボード+Ctrl+V)に失敗しました。", ex);
-            return false;
+            return TextInsertResult.ClipboardFailed;
         }
         finally
         {
             if (original is not null && writtenSequence is uint sequence)
             {
-                RestoreClipboardLater(original, sequence);
+                if (pasteSent)
+                {
+                    RestoreClipboardLater(original, sequence);
+                }
+                else
+                {
+                    // 貼り付けていないので待つ必要がない。待たずに戻せば、
+                    // 整形結果がクリップボードに残ったまま放置されることもない。
+                    RestoreClipboardNow(original, sequence);
+                }
             }
         }
     }
@@ -112,6 +151,24 @@ public sealed class ClipboardTextInserter : ITextInserter
     private void RestoreClipboardLater(ClipboardSnapshot original, uint writtenSequence)
     {
         ClipboardRestoreScheduler.Schedule(original, writtenSequence, _restoreDelayMs, _logger);
+    }
+
+    /// <summary>
+    /// 貼り付けずに中止した場合の復元。待つ理由がないため即座に戻す。
+    /// 書き込んだあとに利用者がコピーしていれば、その内容は上書きしない。
+    /// </summary>
+    private void RestoreClipboardNow(ClipboardSnapshot original, uint writtenSequence)
+    {
+        var result = original.WriteToClipboard(onlyIfSequenceIs: writtenSequence);
+
+        if (result == ClipboardWriteResult.SkippedBecauseChanged)
+        {
+            _logger.Info("中止後にクリップボードが更新されていたため、元の内容の復元は見送りました。");
+        }
+        else if (result != ClipboardWriteResult.Written)
+        {
+            _logger.Warn($"中止後のクリップボードの復元に失敗しました({result})。");
+        }
     }
 
     private static uint SendCtrlV()
