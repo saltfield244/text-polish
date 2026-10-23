@@ -55,7 +55,8 @@
             </DockPanel>
 
             <TextBox Grid.Row="1" x:Name="ResultTextBox" TextWrapping="Wrap"
-                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/>
+                     VerticalScrollBarVisibility="Auto" AcceptsReturn="True"
+                     TextChanged="ResultTextBox_TextChanged"/>
 
             <ScrollViewer Grid.Row="1" x:Name="DiffScroll" Visibility="Collapsed"
                           VerticalScrollBarVisibility="Auto" Background="#FAFAFA"

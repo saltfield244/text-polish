@@ -9,6 +9,7 @@ using TextPolish.Core.History;
 using TextPolish.Core.Diff;
 using TextPolish.Core.Llm;
 using TextPolish.Core.Logging;
+using TextPolish.Core.Polish;
 // WinForms(トレイアイコン用)にも同名の型があるため、WPF側を明示する。
 using Brush = System.Windows.Media.Brush;
 using CheckBox = System.Windows.Controls.CheckBox;
@@ -49,6 +50,12 @@ public partial class PaletteWindow : Window
     private readonly IAppLogger _logger;
 
     private readonly List<CheckBox> _presetToggles = new();
+
+    /// <summary>
+    /// 書き戻してよい結果を持っているかどうかの判定。
+    /// 再整形が失敗したときに前回の結果を適用してしまわないよう、状態をここに集めている。
+    /// </summary>
+    private readonly PolishResultState _result = new();
 
     private bool _isRunning;
     private CancellationTokenSource? _cts;
@@ -173,6 +180,10 @@ public partial class PaletteWindow : Window
 
         _isRunning = true;
 
+        // 表示中の結果は、この時点で「前回の結果」に格下げされる。
+        // 今回の整形が成功するまでは書き戻せない(消さずに残すので読み返しはできる)。
+        _result.BeginRun();
+
         // 中止判定用にローカルへ保持する。タイムアウトもユーザー中止も同じ例外型で飛んでくるため、
         // このトークンが実際にキャンセルされたかどうかで振り分ける。
         var cts = new CancellationTokenSource();
@@ -192,7 +203,8 @@ public partial class PaletteWindow : Window
                 },
                 cts.Token);
 
-            ResultTextBox.Text = result;
+            _result.SetResult(result);
+            ResultTextBox.Text = _result.Text;
 
             var diffSuppressed = InitializeDiffView();
             SetBusy(false, diffSuppressed
@@ -202,19 +214,20 @@ public partial class PaletteWindow : Window
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            SetBusy(false, "整形を中止しました。");
+            SetBusy(false, WithStaleResultNote("整形を中止しました。"));
             _logger.Info($"整形を中止しました({label})。");
         }
         catch (TaskCanceledException)
         {
             // ユーザー中止は上のフィルターで処理済みなので、ここに来るのはHttpClientのタイムアウト。
-            SetBusy(false, "タイムアウトしました。RequestTimeoutSeconds を延ばすか ReasoningEffort を下げてください。");
+            SetBusy(false, WithStaleResultNote(
+                "タイムアウトしました。RequestTimeoutSeconds を延ばすか ReasoningEffort を下げてください。"));
             _logger.Error($"LLM呼び出しがタイムアウトしました({label})。");
         }
         catch (Exception ex)
         {
             _logger.Error("整形に失敗しました。", ex);
-            SetBusy(false, $"整形に失敗しました: {ex.Message}");
+            SetBusy(false, WithStaleResultNote($"整形に失敗しました: {ex.Message}"));
         }
         finally
         {
@@ -232,9 +245,35 @@ public partial class PaletteWindow : Window
         // 実行中は「実行」ボタンを中止ボタンとして使う(押せる状態のまま役割だけ入れ替える)。
         RunButton.Content = busy ? "中止" : "実行";
 
-        // 実行中に古い結果を書き戻せてしまわないよう、整形中は「置き換える」を無効にする。
-        ApplyButton.IsEnabled = !busy && !string.IsNullOrWhiteSpace(ResultTextBox.Text);
+        // 整形中はもちろん、再整形が失敗した直後も「置き換える」は押せない
+        // (結果欄に残っているのは前回の結果なので、それを書き戻してはいけない)。
+        ApplyButton.IsEnabled = !busy && _result.CanApply;
         Cursor = busy ? System.Windows.Input.Cursors.Wait : System.Windows.Input.Cursors.Arrow;
+    }
+
+    /// <summary>
+    /// 失敗・中止の知らせに、表示中の結果が前回のものであることを付け足す。
+    /// 「置き換える」が押せない理由が分からないと、壊れたように見えるため。
+    /// </summary>
+    private string WithStaleResultNote(string message) =>
+        _result.HasStaleText
+            ? message + " 表示中の結果は前回のものです。書き戻すには、もう一度整形してください。"
+            : message;
+
+    /// <summary>
+    /// 結果欄の編集を状態側へ反映する。整形に成功したあとの手直しはそのまま書き戻せるが、
+    /// 空にした場合は書き戻せなくなる。
+    /// </summary>
+    private void ResultTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        // InitializeComponent中にも呼ばれ得るため、UIが揃っているかを確かめる。
+        if (ApplyButton is null)
+        {
+            return;
+        }
+
+        _result.SetEditedText(ResultTextBox.Text);
+        ApplyButton.IsEnabled = !_isRunning && _result.CanApply;
     }
 
     private async void RunButton_Click(object sender, RoutedEventArgs e)
@@ -291,11 +330,13 @@ public partial class PaletteWindow : Window
 
     private async void ApplyButton_Click(object sender, RoutedEventArgs e)
     {
-        var text = ResultTextBox.Text;
-        if (string.IsNullOrEmpty(text))
+        // 直近の整形が成功していなければ押せないが、二重クリック等に備えてここでも確かめる。
+        if (!_result.CanApply)
         {
             return;
         }
+
+        var text = _result.Text;
 
         // パレットを隠してから、取得元のウィンドウへフォーカスを戻す。
         // 選択状態が残っているため、貼り付けで置換になる。
@@ -348,7 +389,7 @@ public partial class PaletteWindow : Window
         Show();
         Activate();
         StatusText.Text = status;
-        ApplyButton.IsEnabled = !string.IsNullOrWhiteSpace(ResultTextBox.Text);
+        ApplyButton.IsEnabled = _result.CanApply;
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
