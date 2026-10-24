@@ -132,7 +132,9 @@ git grep -n "TODO-api-key" -- src/TextPolish.App/appsettings.json
 
 初回実行では、`actions/checkout@v4` と `actions/setup-dotnet@v4` が Node.js 20 を
 対象にしているという非推奨の警告が出ました(実行自体は Node.js 24 で成功)。
-`checkout@v7` / `setup-dotnet@v6` へ更新済みです。
+`checkout@v7` / `setup-dotnet@v6` へ更新し、
+[build #2](https://github.com/saltfield244/text-polish/actions/runs/40045526150)
+が警告なしで成功することを確認しています。
 
 CIは `--no-clipboard` で実行するため、**クリップボードのテストはCIでは通りません**。
 CIが緑でも、上記2.2の実機確認を省略しないでください。
