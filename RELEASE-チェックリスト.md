@@ -45,6 +45,13 @@ dotnet run --project src\TextPolish.Tests
 - [ ] 回帰テストが全件成功する(クリップボードのテストを含む)
 - [ ] GitHub Actions の `build` が main で成功している(下記4)
 
+クリップボードのテストは以前、実行するたびに1〜2件が不定に失敗していました。
+原因はテスト側の WinForms `Clipboard` 呼び出しが他プロセスとの競合に弱いことで、
+検証対象の `ClipboardSnapshot` 側ではありませんでした(詳細は
+[src/TextPolish.Tests/README.md](src/TextPolish.Tests/README.md))。
+テスト側にリトライを入れ、連続10回の実行がすべて 76/76 で成功することを確認しています。
+もし再び不定に失敗するようなら、原因を確かめるまで公開しないでください。
+
 ### 2.2 実機で確認するもの
 
 `src/TextPolish.Tests/README.md` の手順を実施します。

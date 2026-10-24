@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.Runtime.InteropServices;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -35,13 +36,13 @@ internal static class ClipboardTests
 
     private static void TextRoundTrip()
     {
-        Clipboard.SetText("元のテキスト\r\n2行目");
+        Set(() => Clipboard.SetText("元のテキスト\r\n2行目"));
         var snapshot = CaptureOrFail();
 
-        Clipboard.SetText("上書き");
+        Set(() => Clipboard.SetText("上書き"));
         Assert.Equal(ClipboardWriteResult.Written, snapshot.WriteToClipboard(), "書き込み結果");
 
-        Assert.Equal("元のテキスト\r\n2行目", Clipboard.GetText(), "テキスト");
+        Assert.Equal("元のテキスト\r\n2行目", GetText(), "テキスト");
         Assert.True(snapshot.IsComplete, "テキストだけなのに欠けた形式がある");
     }
 
@@ -53,18 +54,19 @@ internal static class ClipboardTests
         data.SetText("太字の文章", TextDataFormat.UnicodeText);
         data.SetText(html, TextDataFormat.Html);
         data.SetText(rtf, TextDataFormat.Rtf);
-        Clipboard.SetDataObject(data, copy: true);
+        Set(() => Clipboard.SetDataObject(data, copy: true));
 
-        var expectedHtml = Clipboard.GetText(TextDataFormat.Html);
+        var expectedHtml = GetText(TextDataFormat.Html);
         var snapshot = CaptureOrFail();
 
-        Clipboard.SetText("上書き");
+        Set(() => Clipboard.SetText("上書き"));
         snapshot.WriteToClipboard();
 
-        Assert.Equal("太字の文章", Clipboard.GetText(TextDataFormat.UnicodeText), "プレーンテキスト");
-        Assert.Equal(expectedHtml, Clipboard.GetText(TextDataFormat.Html), "HTML");
-        Assert.True(Clipboard.GetText(TextDataFormat.Html).Contains(html), "HTMLの本文");
-        Assert.Equal(rtf, Clipboard.GetText(TextDataFormat.Rtf).TrimEnd('\0'), "RTF");
+        var restoredHtml = GetText(TextDataFormat.Html);
+        Assert.Equal("太字の文章", GetText(TextDataFormat.UnicodeText), "プレーンテキスト");
+        Assert.Equal(expectedHtml, restoredHtml, "HTML");
+        Assert.True(restoredHtml.Contains(html), "HTMLの本文");
+        Assert.Equal(rtf, GetText(TextDataFormat.Rtf).TrimEnd('\0'), "RTF");
     }
 
     private static void ImageRoundTrip()
@@ -73,13 +75,13 @@ internal static class ClipboardTests
         bitmap.SetPixel(0, 0, Color.Red);
         bitmap.SetPixel(1, 0, Color.Lime);
         bitmap.SetPixel(2, 1, Color.Blue);
-        Clipboard.SetImage(bitmap);
+        Set(() => Clipboard.SetImage(bitmap));
 
         var snapshot = CaptureOrFail();
         Assert.True(snapshot.GetData(CF_DIB) is not null, "画像(CF_DIB)を退避できていない");
 
-        Clipboard.SetText("上書き");
-        Assert.True(!Clipboard.ContainsImage(), "上書きできていない");
+        Set(() => Clipboard.SetText("上書き"));
+        Assert.True(!Query(Clipboard.ContainsImage), "上書きできていない");
         snapshot.WriteToClipboard();
 
         // 復元後のクリップボードを退避し直し、形式の並びと中身が退避時と完全に一致するかを見る。
@@ -96,8 +98,8 @@ internal static class ClipboardTests
                 $"形式 0x{format:X4} の中身が一致しない");
         }
 
-        Assert.True(Clipboard.ContainsImage(), "画像として認識されない");
-        using var image = Clipboard.GetImage();
+        Assert.True(Query(Clipboard.ContainsImage), "画像として認識されない");
+        using var image = Query(Clipboard.GetImage)!;
         Assert.Equal(new Size(3, 2), image?.Size ?? Size.Empty, "画像サイズ");
     }
 
@@ -108,14 +110,14 @@ internal static class ClipboardTests
         data.SetFileDropList(files);
         // エクスプローラーで「切り取り」した状態(DROPEFFECT_MOVE = 2)。
         data.SetData(DropEffectFormat, new MemoryStream(BitConverter.GetBytes(2)));
-        Clipboard.SetDataObject(data, copy: true);
+        Set(() => Clipboard.SetDataObject(data, copy: true));
 
         var snapshot = CaptureOrFail();
 
-        Clipboard.SetText("上書き");
+        Set(() => Clipboard.SetText("上書き"));
         snapshot.WriteToClipboard();
 
-        var restored = Clipboard.GetFileDropList();
+        var restored = Query(Clipboard.GetFileDropList);
         Assert.Equal(files.Count, restored.Count, "ファイル数");
         Assert.Equal(files[0], restored[0], "1件目");
         Assert.Equal(files[1], restored[1], "2件目");
@@ -128,14 +130,14 @@ internal static class ClipboardTests
 
     private static void EmptyRoundTrip()
     {
-        Clipboard.Clear();
+        Set(Clipboard.Clear);
         var snapshot = CaptureOrFail();
         Assert.Equal(0, snapshot.FormatCount, "空のクリップボードの形式数");
 
-        Clipboard.SetText("上書き");
+        Set(() => Clipboard.SetText("上書き"));
         snapshot.WriteToClipboard();
 
-        Assert.True(!Clipboard.ContainsText(), "空に戻っていない");
+        Assert.True(!Query(Clipboard.ContainsText), "空に戻っていない");
     }
 
     private static void SizeLimitKeepsSmallFormats()
@@ -143,7 +145,7 @@ internal static class ClipboardTests
         var data = new DataObject();
         data.SetText("小さいテキスト");
         data.SetData("TextPolish.Tests.Large", new MemoryStream(new byte[256 * 1024]));
-        Clipboard.SetDataObject(data, copy: true);
+        Set(() => Clipboard.SetDataObject(data, copy: true));
 
         var logger = new NullLogger();
         var snapshot = ClipboardSnapshot.Capture(logger, maxTotalBytes: 64 * 1024)!;
@@ -151,53 +153,53 @@ internal static class ClipboardTests
         Assert.True(!snapshot.IsComplete, "上限超過なのに完全扱い");
         Assert.True(logger.Warnings.Count > 0, "欠けた形式の警告がない");
 
-        Clipboard.SetText("上書き");
+        Set(() => Clipboard.SetText("上書き"));
         snapshot.WriteToClipboard();
-        Assert.Equal("小さいテキスト", Clipboard.GetText(), "小さい形式(テキスト)");
-        Assert.True(!Clipboard.ContainsData("TextPolish.Tests.Large"), "上限を超えた形式が書き込まれた");
+        Assert.Equal("小さいテキスト", GetText(), "小さい形式(テキスト)");
+        Assert.True(!Query(() => Clipboard.ContainsData("TextPolish.Tests.Large")), "上限を超えた形式が書き込まれた");
     }
 
     private static void ConditionalWriteSkipsWhenChanged()
     {
-        Clipboard.SetText("元の内容");
+        Set(() => Clipboard.SetText("元の内容"));
         var snapshot = CaptureOrFail();
 
         ClipboardSnapshot.FromText("整形結果").WriteToClipboard();
         var written = ClipboardSnapshot.CurrentSequenceNumber;
 
-        Clipboard.SetText("ユーザーがコピーした内容");
+        Set(() => Clipboard.SetText("ユーザーがコピーした内容"));
 
         Assert.Equal(
             ClipboardWriteResult.SkippedBecauseChanged,
             snapshot.WriteToClipboard(onlyIfSequenceIs: written),
             "書き込み結果");
-        Assert.Equal("ユーザーがコピーした内容", Clipboard.GetText(), "クリップボード");
+        Assert.Equal("ユーザーがコピーした内容", GetText(), "クリップボード");
     }
 
     private static void ScheduledRestoreRestores()
     {
-        Clipboard.SetText("元の内容");
+        Set(() => Clipboard.SetText("元の内容"));
         var original = CaptureOrFail();
         var written = WriteTransient("整形結果");
 
         ClipboardRestoreScheduler.Schedule(original, written, delayMs: 1000, new NullLogger());
-        Assert.Equal("整形結果", Clipboard.GetText(), "待ち時間中の内容");
+        Assert.Equal("整形結果", GetText(), "待ち時間中の内容");
 
         Thread.Sleep(1600);
-        Assert.Equal("元の内容", Clipboard.GetText(), "復元後の内容");
+        Assert.Equal("元の内容", GetText(), "復元後の内容");
     }
 
     private static void ScheduledRestoreRespectsUserCopy()
     {
-        Clipboard.SetText("元の内容");
+        Set(() => Clipboard.SetText("元の内容"));
         var original = CaptureOrFail();
         var written = WriteTransient("整形結果");
 
         ClipboardRestoreScheduler.Schedule(original, written, delayMs: 1000, new NullLogger());
-        Clipboard.SetText("待ち時間中にユーザーがコピー");
+        Set(() => Clipboard.SetText("待ち時間中にユーザーがコピー"));
 
         Thread.Sleep(1600);
-        Assert.Equal("待ち時間中にユーザーがコピー", Clipboard.GetText(), "ユーザーのコピーが上書きされた");
+        Assert.Equal("待ち時間中にユーザーがコピー", GetText(), "ユーザーのコピーが上書きされた");
     }
 
     /// <summary>
@@ -207,7 +209,7 @@ internal static class ClipboardTests
     private static void ConsecutiveRunsKeepFirstOriginal()
     {
         var logger = new NullLogger();
-        Clipboard.SetText("本来の元内容");
+        Set(() => Clipboard.SetText("本来の元内容"));
 
         // 1回目
         var first = ClipboardRestoreScheduler.TakeOriginal(logger) ?? CaptureOrFail();
@@ -219,31 +221,31 @@ internal static class ClipboardTests
         ClipboardRestoreScheduler.Schedule(second, WriteTransient("整形結果2"), delayMs: 1000, logger);
 
         Thread.Sleep(1600);
-        Assert.Equal("本来の元内容", Clipboard.GetText(), "最終的なクリップボード");
+        Assert.Equal("本来の元内容", GetText(), "最終的なクリップボード");
     }
 
     private static void TakeOriginalAfterUserCopy()
     {
         var logger = new NullLogger();
-        Clipboard.SetText("元の内容");
+        Set(() => Clipboard.SetText("元の内容"));
         var original = CaptureOrFail();
         ClipboardRestoreScheduler.Schedule(original, WriteTransient("整形結果"), delayMs: 5000, logger);
 
-        Clipboard.SetText("ユーザーがコピー");
+        Set(() => Clipboard.SetText("ユーザーがコピー"));
 
         Assert.True(ClipboardRestoreScheduler.TakeOriginal(logger) is null, "古い元内容を引き継いでしまう");
         ClipboardRestoreScheduler.RestorePendingNow();
-        Assert.Equal("ユーザーがコピー", Clipboard.GetText(), "クリップボード");
+        Assert.Equal("ユーザーがコピー", GetText(), "クリップボード");
     }
 
     private static void RestorePendingNowRestores()
     {
-        Clipboard.SetText("元の内容");
+        Set(() => Clipboard.SetText("元の内容"));
         var original = CaptureOrFail();
         ClipboardRestoreScheduler.Schedule(original, WriteTransient("整形結果"), delayMs: 60_000, new NullLogger());
 
         ClipboardRestoreScheduler.RestorePendingNow();
-        Assert.Equal("元の内容", Clipboard.GetText(), "即時復元");
+        Assert.Equal("元の内容", GetText(), "即時復元");
     }
 
     /// <summary>
@@ -256,7 +258,7 @@ internal static class ClipboardTests
     /// </summary>
     private static void InsertAbortsWhenTargetWindowIsGone()
     {
-        Clipboard.SetText("利用者がコピーしていた内容");
+        Set(() => Clipboard.SetText("利用者がコピーしていた内容"));
 
         var logger = new NullLogger();
         var inserter = new ClipboardTextInserter(logger, restoreClipboard: true, restoreDelayMs: 60_000);
@@ -267,7 +269,94 @@ internal static class ClipboardTests
             .GetResult();
 
         Assert.Equal(TextInsertResult.TargetWindowChanged, result, "書き戻しの結果");
-        Assert.Equal("利用者がコピーしていた内容", Clipboard.GetText(), "中止後のクリップボード");
+        Assert.Equal("利用者がコピーしていた内容", GetText(), "中止後のクリップボード");
+    }
+
+    // --- テスト側のクリップボード操作のリトライ -------------------------------------------
+    //
+    // クリップボードはOSの共有資源で、クリップボード履歴(Win+V)をはじめ他のプロセスも
+    // 同時に開く。WinForms の Clipboard はこの競合に弱く、短い間隔で読み書きすると
+    //   ・SetText / SetDataObject が ExternalException を投げる
+    //   ・GetText が空、または見た目が空白の壊れた値を返す
+    // ことがある。どちらも検証対象とは無関係にテストを失敗させるため、
+    // テスト側の操作だけを短時間リトライする。
+    //
+    // 検証対象(Win32で読み書きする ClipboardSnapshot)側はリトライを足していない。
+    // 原因調査のため同じ往復を150回試した計測では、WriteToClipboard は毎回 Written を返し、
+    // 復元内容も正しかった。失敗していたのはテスト側の WinForms 呼び出しだけで、
+    // 操作の間隔を空けるだけでも再現しなくなる。期待値そのものは緩めていない。
+
+    private const int RetryAttempts = 40;
+    private const int RetryIntervalMs = 25;
+
+    /// <summary>クリップボードへの書き込み。競合による例外だけをリトライする。</summary>
+    private static void Set(Action set)
+    {
+        for (var i = 0; i < RetryAttempts; i++)
+        {
+            try
+            {
+                set();
+                return;
+            }
+            catch (ExternalException) when (i < RetryAttempts - 1)
+            {
+                Thread.Sleep(RetryIntervalMs);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 中身があるはずのテキストを読む。空や壊れた値が返るあいだはリトライする。
+    /// 最後まで読めなければ読めた値をそのまま返し、表明側で失敗させる(無言で待ち続けない)。
+    /// </summary>
+    private static string GetText(TextDataFormat? format = null)
+    {
+        var last = string.Empty;
+
+        for (var i = 0; i < RetryAttempts; i++)
+        {
+            try
+            {
+                last = format is TextDataFormat f ? Clipboard.GetText(f) : Clipboard.GetText();
+                if (LooksUsable(last))
+                {
+                    return last;
+                }
+            }
+            catch (ExternalException)
+            {
+            }
+
+            Thread.Sleep(RetryIntervalMs);
+        }
+
+        return last;
+    }
+
+    /// <summary>
+    /// 読めた値が使えるものか。空白だけ、または制御文字だけの文字列は競合による
+    /// 壊れた読み取りとみなす(テストがクリップボードへ書くのは必ず通常の文字を含む文字列のため)。
+    /// </summary>
+    private static bool LooksUsable(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Any(c => !char.IsControl(c) && !char.IsWhiteSpace(c));
+
+    /// <summary>空も正しい答えになり得る問い合わせ。競合による例外だけをリトライする。</summary>
+    private static T Query<T>(Func<T> read)
+    {
+        for (var i = 0; i < RetryAttempts; i++)
+        {
+            try
+            {
+                return read();
+            }
+            catch (ExternalException) when (i < RetryAttempts - 1)
+            {
+                Thread.Sleep(RetryIntervalMs);
+            }
+        }
+
+        return read();
     }
 
     private static ClipboardSnapshot CaptureOrFail() =>

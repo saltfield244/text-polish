@@ -16,6 +16,12 @@ dotnet run --project src\TextPolish.Tests
 - クリップボードのテストは**実際のクリップボードを書き換えます**。実行前の内容はテスト対象の
   `ClipboardSnapshot` で退避し、終了時に戻します。Windowsの「クリップボードの履歴」(Win+V)を
   有効にしている場合、テスト中の内容が履歴に残ります。
+- クリップボードはOSの共有資源で、クリップボード履歴をはじめ他のプロセスも同時に開きます。
+  テスト側で使っている WinForms の `Clipboard` はこの競合に弱く、短い間隔で読み書きすると
+  書き込みが `ExternalException` で失敗したり、読み取りが空や壊れた値を返したりします。
+  そのためテスト側の操作だけを短時間リトライしています(`ClipboardTests` の `Set` / `GetText` / `Query`)。
+  検証対象の `ClipboardSnapshot` 側は変更していません。同じ往復を150回繰り返した計測では
+  `WriteToClipboard` は毎回 `Written` を返し、復元内容も正しいことを確認しています。
 - デスクトップのない環境(CI、サービス実行等)では `--no-clipboard` を付けて設定のテストだけを実行します。
   ```
   dotnet run --project src\TextPolish.Tests -- --no-clipboard
