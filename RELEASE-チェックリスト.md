@@ -19,7 +19,7 @@ v1.0.1 からの差分は、どれも**書き戻し・クリップボード・AP
 | LLM応答 | 終了理由の検査(途中終了を採用しない) | ✅ | ✅ 16件 | ⚠ 未(手順F) |
 | パレット | 再整形失敗時に前回の結果を書き戻さない | ✅ | ✅ 12件 | ⚠ 未(手順G) |
 | プライバシー | 周辺文脈の送信ON/OFF(既定OFF) | ✅ | ✅ 7件 | ⚠ 未(手順H) |
-| CI | GitHub Actions(Releaseビルド + `--no-clipboard`) | ✅ | ✅ 初回実行は成功 | ⬜ 失敗時に赤くなるかは未確認 |
+| CI | GitHub Actions(Releaseビルド + `--no-clipboard`) | ✅ | ✅ 成功。失敗時に赤くなることも確認済み | — |
 
 「自動テスト」の件数は `src/TextPolish.Tests` の回帰テストです。実機確認の手順は
 [src/TextPolish.Tests/README.md](src/TextPolish.Tests/README.md) にあります。
@@ -126,8 +126,13 @@ git grep -n "TODO-api-key" -- src/TextPolish.App/appsettings.json
       出力そのものは未確認。**
 - [ ] `Test (クリップボードを使わないもの)` の最後に `63/63 件成功` のような行が出ている
       → 同上。ジョブの成否からは分かるが、行そのものは未確認
-- [ ] 意図的にテストを1件壊した状態で push すると**赤くなる**ことを一度確認する
+- [x] 意図的にテストを1件壊した状態で push すると**赤くなる**ことを一度確認する
       (通っているのではなく、見ていることを確かめる)
+      → `PasteTargetTests` の期待値を1つ誤った値にして push し、
+      [build #4](https://github.com/saltfield244/text-polish/actions/runs/40046679888) が
+      **failure** になることを確認。revert 後の
+      [build #5](https://github.com/saltfield244/text-polish/actions/runs/40046823027) で
+      緑に戻ることも確認した(コミット `35368c3` と、その revert `aeecfae`)。
 - [ ] Pull Request を作ると同じワークフローが走る
 
 初回実行では、`actions/checkout@v4` と `actions/setup-dotnet@v4` が Node.js 20 を
@@ -151,8 +156,9 @@ CIが緑でも、上記2.2の実機確認を省略しないでください。
    自動テストでは判定ロジックしか見ていないため実機確認が必須)
 3. 2.3 の更新手順を実際に通し、既存の設定・APIキー・プリセット・用語辞書が残ることを確認した
 4. 3 の配布物チェックで、秘密情報が混入していないことを確認した
-5. 4 のCIが main で緑になっている(初回実行は成功済み。
-   「意図的に壊すと赤くなる」の確認だけが残っている)
+5. 4 のCIが main で緑になっている
+   (初回実行・失敗検出とも確認済み。残るのは Pull Request での起動確認だけで、
+   次にPRを作ったときに分かる)
 
 ### 一部だけ先に出したい場合
 
