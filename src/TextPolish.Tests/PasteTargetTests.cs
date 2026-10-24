@@ -30,10 +30,8 @@ internal static class PasteTargetTests
     }
 
     private static void SameWindowIsOk() =>
-        // CIが失敗を検出できることを確かめるための、意図的に誤った期待値。
-        // このコミットは直後に revert する。
         Assert.Equal(
-            PasteTargetCheck.Mismatch,
+            PasteTargetCheck.Ok,
             PasteTarget.Check(Source, Source, expectedStillExists: true),
             "取得元が前面にある場合");
 
