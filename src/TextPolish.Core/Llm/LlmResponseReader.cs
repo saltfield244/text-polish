@@ -36,7 +36,11 @@ public enum LlmFinishStatus
 /// 原文の一部を失う。<see cref="RejectionReason"/> が null でない場合は採用せず、
 /// 呼び出し元は原文を変更しないこと。
 /// </summary>
-public sealed record LlmResponse(string? Text, string? FinishReason, LlmFinishStatus Status)
+public sealed record LlmResponse(
+    string? Text,
+    string? FinishReason,
+    LlmFinishStatus Status,
+    string? OutputLimitAdvice = null)
 {
     public bool HasText => !string.IsNullOrWhiteSpace(Text);
 
@@ -50,8 +54,7 @@ public sealed record LlmResponse(string? Text, string? FinishReason, LlmFinishSt
             "LLMの応答の形式が想定と異なり、整形結果を取り出せませんでした。原文は変更していません。",
 
         LlmFinishStatus.Truncated =>
-            $"整形結果が出力途中で打ち切られました({DescribeReason()})。原文は変更していません。" +
-            "MaxCompletionTokens を増やす、ReasoningEffort を下げる、選択範囲を短くする、のいずれかをお試しください。",
+            $"整形結果が出力途中で打ち切られました({DescribeReason()})。原文は変更していません。" + Advice(),
 
         LlmFinishStatus.Blocked =>
             $"LLM側で出力がブロックされました({DescribeReason()})。原文は変更していません。",
@@ -62,14 +65,26 @@ public sealed record LlmResponse(string? Text, string? FinishReason, LlmFinishSt
         // 終了理由が正常(または省略)でも、結果が空なら採用できない。
         // 推論モデルは出力上限に達すると推論トークンだけを消費して content が空になることがある。
         _ when !HasText =>
-            "整形結果が空でした。出力上限に達した可能性があります。" +
-            "MaxCompletionTokens を増やすか ReasoningEffort を下げてください。",
+            "整形結果が空でした。出力上限に達した可能性があります。" + Advice(),
 
         _ => null,
     };
 
     private string DescribeReason() =>
         string.IsNullOrWhiteSpace(FinishReason) ? "終了理由の記載なし" : $"終了理由: {FinishReason}";
+
+    /// <summary>
+    /// 出力上限に当たったときの対処案内。
+    ///
+    /// 設定できる項目はプロバイダごとに違う。以前は共通の文面で MaxCompletionTokens と
+    /// ReasoningEffort を案内していたが、Gemini にはどちらの設定もないため、
+    /// 利用者が設定画面を探しても見つからない案内になっていた。
+    /// そのため案内は応答を読んだ側(<see cref="LlmResponseReader"/>)から渡す。
+    /// </summary>
+    private string Advice() =>
+        string.IsNullOrWhiteSpace(OutputLimitAdvice)
+            ? "選択範囲を短くしてお試しください。"
+            : OutputLimitAdvice;
 }
 
 /// <summary>
@@ -82,6 +97,19 @@ public sealed record LlmResponse(string? Text, string? FinishReason, LlmFinishSt
 /// </summary>
 public static class LlmResponseReader
 {
+    /// <summary>OpenAI互換・Azure の出力上限は設定で変えられる(ChatCompletionOptions で送っている)。</summary>
+    private const string ChatCompletionAdvice =
+        "MaxCompletionTokens を増やす、ReasoningEffort を下げる、選択範囲を短くする、のいずれかをお試しください。";
+
+    /// <summary>
+    /// Gemini には MaxCompletionTokens / ReasoningEffort に相当する設定がなく、
+    /// リクエストにも出力上限を送っていない(モデル側の既定値に任せている)。
+    /// そのため利用者が調整できるのは選択範囲とモデルだけになる。
+    /// </summary>
+    private const string GeminiAdvice =
+        "選択範囲を短くするか、出力上限の大きいモデルに変えてください" +
+        "(この経路では出力上限の設定を送っていないため、モデル側の上限に達しています)。";
+
     /// <summary>OpenAI互換・Azure OpenAI の Chat Completions 応答を読む。</summary>
     public static LlmResponse ReadChatCompletion(string json)
     {
@@ -102,7 +130,7 @@ public static class LlmResponseReader
             }
 
             var reason = ReadString(choice, "finish_reason");
-            return new LlmResponse(text, reason, ClassifyChatCompletion(reason));
+            return new LlmResponse(text, reason, ClassifyChatCompletion(reason), ChatCompletionAdvice);
         }
         catch (JsonException)
         {
@@ -131,7 +159,7 @@ public static class LlmResponseReader
             }
 
             var reason = ReadString(candidate, "finishReason");
-            return new LlmResponse(ReadGeminiText(candidate), reason, ClassifyGemini(reason));
+            return new LlmResponse(ReadGeminiText(candidate), reason, ClassifyGemini(reason), GeminiAdvice);
         }
         catch (JsonException)
         {

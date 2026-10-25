@@ -24,6 +24,7 @@ internal static class LlmResponseTests
         yield return ("応答判定: choices が無い・壊れたJSONは採用しない", ChatCompletionMalformedIsRejected);
         yield return ("応答判定: Gemini の STOP は採用する", GeminiStopIsAccepted);
         yield return ("応答判定: Gemini の MAX_TOKENS は採用しない", GeminiMaxTokensIsRejected);
+        yield return ("応答判定: 対処案内はプロバイダに合わせる", OutputLimitAdviceMatchesProvider);
         yield return ("応答判定: Gemini の SAFETY は採用しない", GeminiSafetyIsRejected);
         yield return ("応答判定: Gemini は複数partsを連結する", GeminiConcatenatesParts);
         yield return ("応答判定: Gemini の思考パートは結果に混ぜない", GeminiSkipsThoughtParts);
@@ -139,6 +140,28 @@ internal static class LlmResponseTests
 
         Assert.Equal(LlmFinishStatus.Truncated, parsed.Status, "終了理由の分類");
         Assert.True(parsed.RejectionReason?.Contains("原文は変更していません") == true, "原文を変えない旨を伝える");
+    }
+
+    private static void OutputLimitAdviceMatchesProvider()
+    {
+        // 対処案内はそのまま利用者に見せる文面なので、そのプロバイダに無い設定名を出すと
+        // 設定画面を探しても見つからない案内になる。Gemini には MaxCompletionTokens も
+        // ReasoningEffort もなく、リクエストにも出力上限を送っていない。
+        var chat = LlmResponseReader.ReadChatCompletion(ChatCompletion("途中まで", "length")).RejectionReason;
+        var gemini = LlmResponseReader.ReadGemini(Gemini("途中まで", "MAX_TOKENS")).RejectionReason;
+
+        Assert.True(chat?.Contains("MaxCompletionTokens") == true, $"OpenAI互換の案内: {chat}");
+        Assert.True(
+            gemini?.Contains("MaxCompletionTokens") == false,
+            $"Geminiに無い設定名を案内している: {gemini}");
+        Assert.True(gemini?.Contains("選択範囲を短く") == true, $"Geminiで取れる手を案内する: {gemini}");
+
+        // 本文が空のときの案内も同じ扱い(出力上限に当たった可能性を伝える経路が2つある)。
+        var emptyGemini = LlmResponseReader.ReadGemini(Gemini("", "STOP")).RejectionReason;
+
+        Assert.True(
+            emptyGemini?.Contains("MaxCompletionTokens") == false,
+            $"空応答でもGeminiに無い設定名を案内している: {emptyGemini}");
     }
 
     private static void GeminiSafetyIsRejected()

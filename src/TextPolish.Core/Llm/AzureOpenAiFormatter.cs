@@ -63,7 +63,7 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
                 _logger.Error(
                     $"Azure OpenAI 呼び出しが失敗しました。Status={(int)response.StatusCode} " +
                     LlmErrorSummary.Describe(responseText));
-                throw new InvalidOperationException($"Azure OpenAI呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
+                throw new LlmRejectedException($"Azure OpenAI呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
             // finish_reason を見て、途中で打ち切られた文章を採用しないようにする。
@@ -76,12 +76,25 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
                     $"Azure OpenAI の応答を整形結果として採用できませんでした" +
                     $"(判定={parsed.Status} finish_reason={LogSanitizer.DescribeToken(parsed.FinishReason)})。" +
                     LlmErrorSummary.Describe(responseText));
-                throw new InvalidOperationException(rejection);
+                throw new LlmRejectedException(rejection);
             }
 
             return parsed.Text!;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 利用者が「中止」を押した場合。異常ではないので ERROR にしない。
+            // 中止の記録は、どの操作を中止したか分かる呼び出し側が INFO で残す。
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // ct が立っていない取り消しは HttpClient のタイムアウト。
+            // 障害ではあるが利用者の操作で復帰できるため WARN に留める。
+            _logger.Warn($"Azure OpenAI 呼び出しがタイムアウトしました。{LogSanitizer.DescribeException(ex)}");
+            throw;
+        }
+        catch (Exception ex) when (ex is not LlmRejectedException)
         {
             // 例外もサーバーの応答を文中に含むことがあるため、種別と短いメッセージだけを残す。
             _logger.Error($"Azure OpenAI 呼び出し中に例外が発生しました。{LogSanitizer.DescribeException(ex)}");

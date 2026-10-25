@@ -78,7 +78,7 @@ public sealed class GeminiFormatter : ILlmFormatter
                 _logger.Error(
                     $"Gemini 呼び出しが失敗しました。Status={(int)response.StatusCode} " +
                     LlmErrorSummary.Describe(responseText));
-                throw new InvalidOperationException($"Gemini呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
+                throw new LlmRejectedException($"Gemini呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
             // finishReason を見て、MAX_TOKENS 等で打ち切られた文章を採用しないようにする。
@@ -91,12 +91,25 @@ public sealed class GeminiFormatter : ILlmFormatter
                     $"Gemini の応答を整形結果として採用できませんでした" +
                     $"(判定={parsed.Status} finishReason={LogSanitizer.DescribeToken(parsed.FinishReason)})。" +
                     LlmErrorSummary.Describe(responseText));
-                throw new InvalidOperationException(rejection);
+                throw new LlmRejectedException(rejection);
             }
 
             return parsed.Text!;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 利用者が「中止」を押した場合。異常ではないので ERROR にしない。
+            // 中止の記録は、どの操作を中止したか分かる呼び出し側が INFO で残す。
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // ct が立っていない取り消しは HttpClient のタイムアウト。
+            // 障害ではあるが利用者の操作で復帰できるため WARN に留める。
+            _logger.Warn($"Gemini 呼び出しがタイムアウトしました。{LogSanitizer.DescribeException(ex)}");
+            throw;
+        }
+        catch (Exception ex) when (ex is not LlmRejectedException)
         {
             // 例外にはURLが載ることがあり、AI Studio経路ではクエリにAPIキーが入る。
             // 種別と短いメッセージだけを残し、キーは LogSanitizer で落とす。

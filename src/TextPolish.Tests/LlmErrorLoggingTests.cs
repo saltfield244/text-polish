@@ -45,6 +45,10 @@ internal static class LlmErrorLoggingTests
         yield return ("エラーログ: APIキーらしい値はログ行から落ちる", SanitizerRedactsKeys);
         yield return ("エラーログ: 例外は種別と短いメッセージだけに要約する", ExceptionIsSummarized);
         yield return ("エラーログ: ログファイルにAPIキーが書かれない", FileLoggerRedactsKeys);
+        yield return ("失敗の記録: 利用者の中止はERRORで残さない", CancellationIsNotLoggedAsError);
+        yield return ("失敗の記録: タイムアウトはWARNで残す", TimeoutIsLoggedAsWarning);
+        yield return ("失敗の記録: 予期しない例外は素通りさせない", UnexpectedExceptionIsLogged);
+        yield return ("失敗の記録: 不採用は専用の例外で投げる", RejectionUsesDedicatedException);
     }
 
     // ---- OpenAI互換 ----
@@ -276,70 +280,179 @@ internal static class LlmErrorLoggingTests
         }
     }
 
+    // ---- 失敗の種類ごとの記録 ----
+
+    private static void CancellationIsNotLoggedAsError()
+    {
+        // 利用者が「中止」を押すのは異常ではない。Formatter が ERROR で残すと、
+        // ログが「失敗」で埋まって本当の障害が埋もれる。中止の記録は呼び出し側が INFO で残す。
+        foreach (var provider in AllProviders)
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            var (log, error) = RunProvider(
+                provider,
+                _ => throw new OperationCanceledException(cts.Token),
+                cts.Token);
+
+            Assert.True(
+                error is OperationCanceledException,
+                $"{provider}: 中止は取り消しの例外として伝わる(実際: {error?.GetType().Name})");
+            Assert.True(!log.Contains("[ERROR]"), $"{provider}: 中止をERRORで残している: {log}");
+            Assert.True(!log.Contains("[WARN]"), $"{provider}: 中止をWARNで残している: {log}");
+        }
+    }
+
+    private static void TimeoutIsLoggedAsWarning()
+    {
+        // 取り消しを頼んでいないのに取り消しが返るのは HttpClient のタイムアウト。
+        // 利用者の操作で復帰できるので WARN に留めるが、記録は残す。
+        foreach (var provider in AllProviders)
+        {
+            var (log, error) = RunProvider(
+                provider,
+                _ => throw new TaskCanceledException("要求がタイムアウトしました", new TimeoutException()),
+                CancellationToken.None);
+
+            Assert.True(error is OperationCanceledException, $"{provider}: タイムアウトはそのまま伝わる");
+            AssertContains(log, "[WARN]");
+            AssertContains(log, "タイムアウト");
+            Assert.True(!log.Contains("[ERROR]"), $"{provider}: タイムアウトをERRORで残している: {log}");
+        }
+    }
+
+    private static void UnexpectedExceptionIsLogged()
+    {
+        // 以前は catch の除外条件が InvalidOperationException 全部だったため、
+        // フレームワーク由来の同じ型の例外が1行も記録されずに素通りしていた。
+        foreach (var provider in AllProviders)
+        {
+            var (log, error) = RunProvider(
+                provider,
+                _ => throw new InvalidOperationException("フレームワーク由来の想定外の状態"),
+                CancellationToken.None);
+
+            Assert.True(
+                error is not LlmRejectedException,
+                $"{provider}: 自分が投げた不採用通知と区別できていない");
+            AssertContains(log, "[ERROR]");
+            AssertContains(log, nameof(InvalidOperationException));
+        }
+    }
+
+    private static void RejectionUsesDedicatedException()
+    {
+        // 不採用・HTTP失敗は専用の型で投げる。これがあって初めて、上の「素通りさせない」が成り立つ。
+        foreach (var provider in AllProviders)
+        {
+            var (_, httpError) = RunProvider(
+                provider,
+                _ => Json(HttpStatusCode.Unauthorized, ErrorBody("invalid_request_error", "\"invalid_api_key\"")),
+                CancellationToken.None);
+
+            Assert.True(
+                httpError is LlmRejectedException,
+                $"{provider}: HTTP失敗の型(実際: {httpError?.GetType().Name})");
+
+            var truncated = provider == Provider.Gemini
+                ? GeminiResponse(Secret, "MAX_TOKENS")
+                : ChatCompletion(Secret, "length");
+
+            var (_, rejectError) = RunProvider(
+                provider, _ => Json(HttpStatusCode.OK, truncated), CancellationToken.None);
+
+            Assert.True(
+                rejectError is LlmRejectedException,
+                $"{provider}: 不採用の型(実際: {rejectError?.GetType().Name})");
+            Assert.True(
+                rejectError!.Message.Contains("原文は変更していません"),
+                $"{provider}: 利用者向けの文面がそのまま使える: {rejectError.Message}");
+        }
+    }
+
     // ---- 実行補助 ----
 
-    private static string RunOpenAi(Func<HttpRequestMessage, HttpResponseMessage> respond)
+    /// <summary>3つのFormatterは同じ構造なので、同じ検査を全プロバイダへ当てるために列挙する。</summary>
+    private enum Provider
     {
-        var settings = new OpenAiCompatibleSettings
-        {
-            Endpoint = "https://example.invalid/v1/chat/completions",
-            ApiKey = OpenAiKey,
-            Model = "test-model",
-        };
-
-        return Run((client, logger) =>
-            new OpenAiCompatibleFormatter(client, settings, new StubPromptProvider(), logger), respond);
+        OpenAi,
+        Azure,
+        Gemini,
     }
 
-    private static string RunAzure(Func<HttpRequestMessage, HttpResponseMessage> respond)
-    {
-        var settings = new AzureOpenAiSettings
-        {
-            Endpoint = "https://example.invalid",
-            ApiKey = AzureKey,
-            Deployment = "test-deployment",
-        };
+    private static readonly Provider[] AllProviders =
+        [Provider.OpenAi, Provider.Azure, Provider.Gemini];
 
-        return Run((client, logger) =>
-            new AzureOpenAiFormatter(client, settings, new StubPromptProvider(), logger), respond);
-    }
+    private static string RunOpenAi(Func<HttpRequestMessage, HttpResponseMessage> respond) =>
+        RunProvider(Provider.OpenAi, respond, CancellationToken.None).Log;
 
-    private static string RunGemini(Func<HttpRequestMessage, HttpResponseMessage> respond)
-    {
-        var settings = new GeminiSettings
-        {
-            Endpoint = "https://example.invalid/v1beta/models/test:generateContent",
-            ApiKey = GeminiKey,
-            AuthMode = "ApiKeyQueryParam",
-        };
+    private static string RunAzure(Func<HttpRequestMessage, HttpResponseMessage> respond) =>
+        RunProvider(Provider.Azure, respond, CancellationToken.None).Log;
 
-        return Run((client, logger) =>
-            new GeminiFormatter(client, settings, new StubPromptProvider(), logger), respond);
-    }
+    private static string RunGemini(Func<HttpRequestMessage, HttpResponseMessage> respond) =>
+        RunProvider(Provider.Gemini, respond, CancellationToken.None).Log;
 
-    /// <summary>整形を1回実行し、記録されたログをまとめて返す。失敗することを前提にしている。</summary>
-    private static string Run(
-        Func<HttpClient, IAppLogger, ILlmFormatter> create,
-        Func<HttpRequestMessage, HttpResponseMessage> respond)
+    /// <summary>
+    /// 整形を1回実行し、記録されたログと投げられた例外を返す。失敗することを前提にしている。
+    /// </summary>
+    private static (string Log, Exception? Error) RunProvider(
+        Provider provider,
+        Func<HttpRequestMessage, HttpResponseMessage> respond,
+        CancellationToken ct)
     {
         var logger = new RecordingLogger();
         using var client = new HttpClient(new StubHandler(respond));
-        var formatter = create(client, logger);
 
-        var request = new LlmFormatRequest { RawText = Secret };
-        var failed = false;
+        ILlmFormatter formatter = provider switch
+        {
+            Provider.OpenAi => new OpenAiCompatibleFormatter(
+                client,
+                new OpenAiCompatibleSettings
+                {
+                    Endpoint = "https://example.invalid/v1/chat/completions",
+                    ApiKey = OpenAiKey,
+                    Model = "test-model",
+                },
+                new StubPromptProvider(),
+                logger),
+
+            Provider.Azure => new AzureOpenAiFormatter(
+                client,
+                new AzureOpenAiSettings
+                {
+                    Endpoint = "https://example.invalid",
+                    ApiKey = AzureKey,
+                    Deployment = "test-deployment",
+                },
+                new StubPromptProvider(),
+                logger),
+
+            _ => new GeminiFormatter(
+                client,
+                new GeminiSettings
+                {
+                    Endpoint = "https://example.invalid/v1beta/models/test:generateContent",
+                    ApiKey = GeminiKey,
+                    AuthMode = "ApiKeyQueryParam",
+                },
+                new StubPromptProvider(),
+                logger),
+        };
+
+        Exception? error = null;
 
         try
         {
-            formatter.FormatAsync(request).GetAwaiter().GetResult();
+            formatter.FormatAsync(new LlmFormatRequest { RawText = Secret }, ct).GetAwaiter().GetResult();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            failed = true;
+            error = ex;
         }
 
-        Assert.True(failed, "失敗する応答を渡しているので例外になるはず");
-        return logger.Text;
+        Assert.True(error is not null, $"{provider}: 失敗する応答を渡しているので例外になるはず");
+        return (logger.Text, error);
     }
 
     private static void AssertNoSecrets(string log, string apiKey)
