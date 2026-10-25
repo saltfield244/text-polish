@@ -24,6 +24,7 @@ internal static class Program
         tests.AddRange(SettingsTests.All());
         tests.AddRange(OperationGateTests.All());
         tests.AddRange(LlmResponseTests.All());
+        tests.AddRange(LlmErrorLoggingTests.All());
         tests.AddRange(PolishResultTests.All());
         tests.AddRange(PasteTargetTests.All());
         tests.AddRange(PromptTests.All());

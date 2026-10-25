@@ -29,7 +29,10 @@ public sealed class FileLogger : IAppLogger
 
     private void Write(string level, string message)
     {
-        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}";
+        // 呼び出し側が取りこぼしても、APIキーらしい値はファイルへ残さない(最後の砦)。
+        // 整形対象の文章は形が決まっておらず機械的には判別できないため、ここでは落とせない。
+        // 文章をログへ渡さないのは呼び出し側で守る(LogSanitizer のコメント参照)。
+        var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {LogSanitizer.Redact(message)}";
         lock (_lock)
         {
             try

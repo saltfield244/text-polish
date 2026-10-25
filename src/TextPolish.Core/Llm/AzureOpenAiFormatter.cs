@@ -58,7 +58,11 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.Error($"Azure OpenAI 呼び出しが失敗しました。Status={(int)response.StatusCode} Body={responseText}");
+                // 応答本文は整形対象の文章を含みうるため、ログへは残さない。
+                // 障害調査に必要なHTTPステータスとエラー種別だけを LlmErrorSummary で要約する。
+                _logger.Error(
+                    $"Azure OpenAI 呼び出しが失敗しました。Status={(int)response.StatusCode} " +
+                    LlmErrorSummary.Describe(responseText));
                 throw new InvalidOperationException($"Azure OpenAI呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
@@ -70,7 +74,8 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
             {
                 _logger.Error(
                     $"Azure OpenAI の応答を整形結果として採用できませんでした" +
-                    $"(判定={parsed.Status} finish_reason={parsed.FinishReason ?? "(なし)"})。Body={responseText}");
+                    $"(判定={parsed.Status} finish_reason={LogSanitizer.DescribeToken(parsed.FinishReason)})。" +
+                    LlmErrorSummary.Describe(responseText));
                 throw new InvalidOperationException(rejection);
             }
 
@@ -78,7 +83,8 @@ public sealed class AzureOpenAiFormatter : ILlmFormatter
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
-            _logger.Error("Azure OpenAI 呼び出し中に例外が発生しました。", ex);
+            // 例外もサーバーの応答を文中に含むことがあるため、種別と短いメッセージだけを残す。
+            _logger.Error($"Azure OpenAI 呼び出し中に例外が発生しました。{LogSanitizer.DescribeException(ex)}");
             throw;
         }
     }

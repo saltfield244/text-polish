@@ -73,7 +73,11 @@ public sealed class GeminiFormatter : ILlmFormatter
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.Error($"Gemini 呼び出しが失敗しました。Status={(int)response.StatusCode} Body={responseText}");
+                // 応答本文は整形対象の文章を含みうるため、ログへは残さない。
+                // 障害調査に必要なHTTPステータスとエラー種別だけを LlmErrorSummary で要約する。
+                _logger.Error(
+                    $"Gemini 呼び出しが失敗しました。Status={(int)response.StatusCode} " +
+                    LlmErrorSummary.Describe(responseText));
                 throw new InvalidOperationException($"Gemini呼び出しに失敗しました(HTTP {(int)response.StatusCode})。");
             }
 
@@ -85,7 +89,8 @@ public sealed class GeminiFormatter : ILlmFormatter
             {
                 _logger.Error(
                     $"Gemini の応答を整形結果として採用できませんでした" +
-                    $"(判定={parsed.Status} finishReason={parsed.FinishReason ?? "(なし)"})。Body={responseText}");
+                    $"(判定={parsed.Status} finishReason={LogSanitizer.DescribeToken(parsed.FinishReason)})。" +
+                    LlmErrorSummary.Describe(responseText));
                 throw new InvalidOperationException(rejection);
             }
 
@@ -93,7 +98,9 @@ public sealed class GeminiFormatter : ILlmFormatter
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
-            _logger.Error("Gemini 呼び出し中に例外が発生しました。", ex);
+            // 例外にはURLが載ることがあり、AI Studio経路ではクエリにAPIキーが入る。
+            // 種別と短いメッセージだけを残し、キーは LogSanitizer で落とす。
+            _logger.Error($"Gemini 呼び出し中に例外が発生しました。{LogSanitizer.DescribeException(ex)}");
             throw;
         }
     }
