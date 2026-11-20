@@ -8,6 +8,7 @@ namespace TextPolish.Tests;
 ///
 ///   TextPolish.Tests                全テストを実行
 ///   TextPolish.Tests --no-clipboard クリップボードを使うテストを除く(CI・リモート実行向け)
+///   TextPolish.Tests --stub         テストではなく、手動確認用のLLMスタブを立てる
 ///
 /// クリップボードのテストは実際のクリップボードを書き換える。実行前の内容は
 /// テスト対象の ClipboardSnapshot 自身で退避し、終了時に戻す。
@@ -18,6 +19,14 @@ internal static class Program
     private static int Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+        // --stub はテストを実行しない。実機確認の最中に、応答の遅さや途中終了を
+        // 手元で作るための道具(Harness/StubServerConsole.cs 参照)。
+        if (args.Contains("--stub", StringComparer.OrdinalIgnoreCase))
+        {
+            return Harness.StubServerConsole.Run(args);
+        }
+
         var includeClipboard = !args.Contains("--no-clipboard", StringComparer.OrdinalIgnoreCase);
 
         var tests = new List<(string Name, Action Body)>();
@@ -25,6 +34,7 @@ internal static class Program
         tests.AddRange(OperationGateTests.All());
         tests.AddRange(LlmResponseTests.All());
         tests.AddRange(LlmErrorLoggingTests.All());
+        tests.AddRange(LlmStubServerTests.All());
         tests.AddRange(FileLoggerTests.All());
         tests.AddRange(PolishResultTests.All());
         tests.AddRange(PasteTargetTests.All());
