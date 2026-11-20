@@ -293,6 +293,80 @@ internal static class UiaDriver
     // ------------------------------------------------------------------
 
     /// <summary>
+    /// トレイアイコンを右クリックして、出たメニューを返す。
+    ///
+    /// 隠れたアイコンの中にいる場合は先に開く。メニューは押さずに返すので、
+    /// 呼び出し側は必ず項目を押すか <see cref="CloseMenu"/> で閉じること。
+    /// 開いたままにすると、次の操作が全部メニューに吸われる。
+    /// </summary>
+    internal static AutomationElement? OpenTrayMenu()
+    {
+        var item = FindTrayItem(TrayBaseText) ?? (OpenHiddenIcons() ? FindTrayItem(TrayBaseText) : null);
+
+        if (item is null)
+        {
+            Console.WriteLine($"  「{TrayBaseText}」のアイコンが見つかりません。");
+            return null;
+        }
+
+        var rect = Safe(() => item.Current.BoundingRectangle);
+
+        // Safe は値型では既定値(幅も高さも0)を返すため、null ではなく大きさで見る。
+        if (rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0)
+        {
+            Console.WriteLine("  アイコンの位置が取れません(画面に出ていない)。");
+            return null;
+        }
+
+        var before = TopLevelHandles();
+
+        if (!SyntheticInput.RightClick(
+                (int)(rect.Left + (rect.Width / 2)), (int)(rect.Top + (rect.Height / 2))))
+        {
+            Console.WriteLine("  右クリックを送れませんでした(SendInput が 0 を返した)。");
+            return null;
+        }
+
+        return WaitForNewTopLevel(before, 3000) ?? FindMenuAnywhere(3000);
+    }
+
+    /// <summary>メニューの項目を名前の先頭一致で押す。</summary>
+    internal static bool ClickMenuItem(AutomationElement menu, string prefix)
+    {
+        var entry = Descendants(menu, 4).FirstOrDefault(e => TypeOf(e) == "MenuItem"
+            && Squash(Safe(() => e.Current.Name)).StartsWith(prefix, StringComparison.Ordinal));
+
+        if (entry is null)
+        {
+            Console.WriteLine($"  メニューに「{prefix}」が見つかりません。");
+            return false;
+        }
+
+        // 出た直後は位置が確定していないことがある(1度、座標が取れていたのに
+        // 押しても開かなかった)。少し待ってから測る。
+        Thread.Sleep(250);
+
+        // Invoke では押さない。相手の処理が返るまで待つため、モーダルのダイアログを出す
+        // 「設定」では返らず UIA が時間切れになる(実際に COMException で落ちた)。
+        // 「終了」も、待っている相手が消える。人と同じように座標で押す。
+        var rect = Safe(() => entry.Current.BoundingRectangle);
+
+        if (rect.IsEmpty || rect.Width <= 0 || rect.Height <= 0)
+        {
+            Console.WriteLine($"  「{prefix}」の位置が取れません。");
+            return false;
+        }
+
+        var x = (int)(rect.Left + (rect.Width / 2));
+        var y = (int)(rect.Top + (rect.Height / 2));
+        Console.WriteLine($"  「{prefix}」を押す座標: ({x}, {y})");
+        return SyntheticInput.LeftClick(x, y);
+    }
+
+    /// <summary>メニューを押さずに閉じる。</summary>
+    internal static void CloseMenu() => SyntheticInput.Tap(SyntheticInput.VkEscape);
+
+    /// <summary>
     /// トレイアイコンを右クリックして、出たメニューを読む(D11・D12 の足場)。
     /// 項目は押さない。終了を押すとアプリが落ちるため、出たことだけを確かめる。
     /// </summary>
@@ -385,7 +459,7 @@ internal static class UiaDriver
     /// 既にある隠れた親ウィンドウの子として出ることがある。増えたウィンドウで
     /// 見つからないときの受け皿。項目名(設定・終了)で当てる。
     /// </summary>
-    private static AutomationElement? FindMenuAnywhere(int timeoutMs)
+    internal static AutomationElement? FindMenuAnywhere(int timeoutMs)
     {
         AutomationElement? found = null;
 
@@ -411,17 +485,17 @@ internal static class UiaDriver
         return found;
     }
 
-    private static List<AutomationElement> AllTopLevel() =>
+    internal static List<AutomationElement> AllTopLevel() =>
         AutomationElement.RootElement
             .FindAll(TreeScope.Children, Condition.TrueCondition)
             .Cast<AutomationElement>()
             .ToList();
 
-    private static HashSet<int> TopLevelHandles() =>
+    internal static HashSet<int> TopLevelHandles() =>
         AllTopLevel().Select(e => Safe(() => e.Current.NativeWindowHandle)).ToHashSet();
 
     /// <summary>直前に無かったトップレベルウィンドウが出るまで待つ。</summary>
-    private static AutomationElement? WaitForNewTopLevel(HashSet<int> before, int timeoutMs)
+    internal static AutomationElement? WaitForNewTopLevel(HashSet<int> before, int timeoutMs)
     {
         AutomationElement? found = null;
 

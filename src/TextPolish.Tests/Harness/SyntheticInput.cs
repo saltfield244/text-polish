@@ -24,6 +24,8 @@ internal static class SyntheticInput
 {
     private const int InputMouse = 0;
     private const int InputKeyboard = 1;
+    private const uint MouseEventFLeftDown = 0x0002;
+    private const uint MouseEventFLeftUp = 0x0004;
     private const uint MouseEventFRightDown = 0x0008;
     private const uint MouseEventFRightUp = 0x0010;
     private const uint KeyEventFKeyUp = 0x0002;
@@ -57,6 +59,37 @@ internal static class SyntheticInput
         Thread.Sleep(80);
 
         var ok = SendMouse(MouseEventFRightDown) && SendMouse(MouseEventFRightUp);
+
+        if (restore)
+        {
+            SetCursorPos(before.X, before.Y);
+        }
+
+        return ok;
+    }
+
+    /// <summary>
+    /// 指した座標で左クリックする。終わったら元のカーソル位置へ戻す。
+    ///
+    /// メニューの項目は UIA の Invoke では押さない。Invoke は相手の処理が返るまで待つため、
+    /// 「設定」のように**モーダルのダイアログを出す**項目では、ダイアログを閉じるまで
+    /// 返らず UIA が時間切れになる(実際に COMException で落ちた)。「終了」も同じで、
+    /// 待っている相手が消える。人と同じように押して、結果は画面とプロセスで確かめる。
+    /// </summary>
+    public static bool LeftClick(int x, int y)
+    {
+        EnsureDpiAware();
+
+        var restore = GetCursorPos(out var before);
+
+        if (!SetCursorPos(x, y))
+        {
+            return false;
+        }
+
+        Thread.Sleep(80);
+
+        var ok = SendMouse(MouseEventFLeftDown) && SendMouse(MouseEventFLeftUp);
 
         if (restore)
         {

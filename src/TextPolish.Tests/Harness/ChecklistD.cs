@@ -14,8 +14,9 @@ namespace TextPolish.Tests.Harness;
 /// ボタンが押せるか)。アプリが「無視した」ことはログで見る。どちらか片方だけでは
 /// 「無視されたのか、そもそも押せていないのか」が区別できない。
 ///
-/// D11・D12 はここには無い。設定画面の作りを実測していないこと、D12 はアプリを
-/// 終了させてしまうことから、別に扱う。
+/// D11・D12 はトレイのメニューを辿る。D12 はアプリを終了させてしまうため最後に流し、
+/// 確認のあとこちらで起こし直す(起こし直したプロセスは別のIDになるので、
+/// D12 より後に流す項目は作らない)。
 /// </summary>
 internal static class ChecklistD
 {
@@ -46,6 +47,7 @@ internal static class ChecklistD
             Console.WriteLine("即実行は F8 で送ります(appsettings.json の QuickHotkey も F8 であること)。");
         }
 
+        _app = app;
         _gapMs = IntArg(args, "--gap", 900);
         _pressGapMs = IntArg(args, "--press-gap", 120);
         _args = args;
@@ -69,6 +71,8 @@ internal static class ChecklistD
             ["d8"] = D8,
             ["d9"] = D9,
             ["d10"] = D10,
+            ["d11"] = D11,
+            ["d12"] = D12,
         };
 
         if (name == "d")
@@ -80,6 +84,12 @@ internal static class ChecklistD
                 // D8 は401を返すスタブが必要なので、通し運転からは外す。
                 // 成功を返すスタブのまま流すと「失敗が記録されない」と出てしまう
                 // (実際にそれを不具合と読みかけた)。
+                // D12 はアプリを落とすので、通し運転では最後にまわす。
+                if (key == "d12")
+                {
+                    continue;
+                }
+
                 if (key == "d8")
                 {
                     Console.WriteLine();
@@ -91,6 +101,8 @@ internal static class ChecklistD
 
                 total += RunOne(key, body, pids, expected);
             }
+
+            total += RunOne("d12", D12, pids, expected);
 
             Console.WriteLine();
             Console.WriteLine(total == 0 ? "D: 流した項目は全部期待どおり。" : $"D: 期待どおりでなかった確認: {total} 件");
@@ -105,7 +117,7 @@ internal static class ChecklistD
 
         if (!items.TryGetValue(name, out var single))
         {
-            Console.WriteLine($"{name} はここでは扱っていません(d1〜d10、または d)。");
+            Console.WriteLine($"{name} はここでは扱っていません(d1〜d12、または d)。");
             return 1;
         }
 
@@ -141,6 +153,9 @@ internal static class ChecklistD
     }
 
     private static TextSourceWindow? _source;
+
+    /// <summary>常駐しているアプリ。D12 で終了を待ち、起こし直すために持つ。</summary>
+    private static Process? _app;
 
     /// <summary>
     /// 即実行のホットキーを送る方法。既定は設定どおりの Ctrl+Shift+W。
@@ -249,6 +264,15 @@ internal static class ChecklistD
         {
             PressQuick();
             Thread.Sleep(_pressGapMs);
+        }
+
+        // 送った直後に前面と選択が崩れていないかを見る。崩れていると、アプリは
+        // 正しく整形して Ctrl+V を送っても、こちらの窓が受け取らない。
+        // 通し運転で1度、ログ上は整形・挿入まで成功しているのに窓の中身が
+        // 変わらない回があった(単独では再現せず)。アプリの不合格と混ぜないため。
+        if (!StillFront(window))
+        {
+            return 0;
         }
 
         var replaced = WaitUntil(() => window.Content != Sample, 40000, 250);
@@ -682,5 +706,177 @@ internal static class ChecklistD
     {
         Console.WriteLine($"  {(ok ? "OK  " : "NG  ")}{what}");
         return ok ? 0 : 1;
+    }
+
+    // ------------------------------------------------------------------
+    // D11・D12(整形中にトレイを操作する)
+    // ------------------------------------------------------------------
+
+    /// <summary>設定画面。<c>SaveButton</c> を持つトップレベルで見分ける。</summary>
+    private static AutomationElement? FindSettings(List<int> pids) =>
+        TopLevelWindows(pids).FirstOrDefault(w => ById(w, "SaveButton") is not null);
+
+    /// <summary>
+    /// D11: 即実行の整形中に、トレイから設定画面を開いて保存して閉じる。
+    /// 整形は完走し、閉じたあともホットキーが効く。
+    ///
+    /// **「保存」は実際に <c>appsettings.json</c> を書き換える。** 手順どおりに
+    /// 保存して閉じるところまでを見るため避けられない。流す側が確認後に
+    /// 設定ファイルを戻すこと(README に書いてある)。
+    /// </summary>
+    private static int D11(List<int> pids, string expected)
+    {
+        var window = OpenSource(Sample);
+
+        if (!Ready(window))
+        {
+            return 1;
+        }
+
+        PressQuick();
+
+        if (!StillFront(window))
+        {
+            return 0;
+        }
+
+        Thread.Sleep(_gapMs);
+
+        var menu = UiaDriver.OpenTrayMenu();
+
+        if (menu is null)
+        {
+            Console.WriteLine("  トレイのメニューが出ませんでした。");
+            return 1;
+        }
+
+        if (!UiaDriver.ClickMenuItem(menu, "設定"))
+        {
+            UiaDriver.CloseMenu();
+            return 1;
+        }
+
+        AutomationElement? settings = null;
+        var opened = WaitUntil(
+            () =>
+            {
+                settings = FindSettings(pids);
+                return settings is not null;
+            },
+            10000,
+            200);
+
+        var failures = Check(opened, "整形中でも設定画面が開く");
+
+        if (!opened || settings is null)
+        {
+            UiaDriver.CloseMenu();
+            return failures;
+        }
+
+        Thread.Sleep(600);
+        Invoker(ById(settings, "SaveButton")!)?.Invoke();
+
+        failures += Check(
+            WaitUntil(() => FindSettings(pids) is null, 10000, 200), "保存すると設定画面が閉じる");
+
+        // 設定画面は ShowDialog(入れ子のメッセージループ)で出ている。
+        // それでも裏の整形が進み、書き戻しまで終わることを見る。
+        failures += Check(
+            WaitUntil(() => Squash(window.Content) == expected, 60000, 250), "即実行の書き戻しは完了する");
+
+        // 閉じたあとにホットキーが効くか。保存のたびにフックを張り直している
+        // (App.ReconfigureHotkeys)ため、ここが壊れると以後どの操作もできなくなる。
+        var after = OpenSource(Sample);
+
+        if (!Ready(after))
+        {
+            Console.WriteLine("  窓を立て直せませんでした。ホットキーの確認はできません。");
+            return failures + 1;
+        }
+
+        var palette = OpenPalette(pids);
+        failures += Check(palette is not null, "設定画面を閉じたあともホットキーが効く");
+        return failures;
+    }
+
+    /// <summary>
+    /// D12: 即実行の整形中に、トレイから終了する。
+    /// 終了でき、クリップボードは元の内容に戻る(<c>OnExit</c> の即時復元)。
+    ///
+    /// この項目はアプリを落とすため、最後に流す。落としたままでは後続の確認が
+    /// できないので、確認のあとこちらで起こし直す。
+    /// </summary>
+    private static int D12(List<int> pids, string expected)
+    {
+        if (_app is null)
+        {
+            Console.WriteLine("  アプリのプロセスが分かりません。");
+            return 1;
+        }
+
+        var exePath = Safe(() => _app.MainModule?.FileName);
+
+        if (exePath is null)
+        {
+            Console.WriteLine("  アプリの場所が分かりません(起こし直せないので流しません)。");
+            return 1;
+        }
+
+        var window = OpenSource(Sample);
+
+        if (!Ready(window))
+        {
+            return 1;
+        }
+
+        PressQuick();
+
+        if (!StillFront(window))
+        {
+            return 0;
+        }
+
+        Thread.Sleep(_gapMs);
+
+        var menu = UiaDriver.OpenTrayMenu();
+
+        if (menu is null)
+        {
+            Console.WriteLine("  トレイのメニューが出ませんでした。");
+            return 1;
+        }
+
+        if (!UiaDriver.ClickMenuItem(menu, "終了"))
+        {
+            UiaDriver.CloseMenu();
+            return 1;
+        }
+
+        var failures = Check(_app.WaitForExit(20000), "整形中でも終了できる");
+
+        // 終了時は遅延復元を待たずにその場で戻す。待ってから戻す作りだと、
+        // プロセスが消えた時点で整形結果がクリップボードに残ってしまう。
+        failures += Check(
+            WaitUntil(() => ClipboardIs(ClipboardMark), 5000, 250), "クリップボードは元の内容に戻る");
+
+        if (Squash(window.Content) != Sample)
+        {
+            // 終了が間に合わず整形が先に終わった場合。アプリの不合格ではない。
+            Console.WriteLine("  整形が先に終わっていました。スタブの --delay を伸ばしてやり直してください。");
+            _undecided++;
+        }
+
+        Console.WriteLine("  アプリを起こし直します。");
+        Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true });
+
+        var back = WaitUntil(() => UiaTree.FindTrayItem("テキスト整形ツール") is not null, 20000, 500);
+        Console.WriteLine(back
+            ? "  起き直しました(トレイにアイコンが出ました)。"
+            : "  起き直したことを確認できませんでした。手で起動してください。");
+
+        // 起こし直したプロセスは別のIDになる。ここより後に流す項目があっても
+        // 古いIDを見てしまうため、D12 は最後に流す。
+        return failures;
     }
 }
