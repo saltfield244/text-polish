@@ -30,7 +30,9 @@ internal static class SyntheticInput
 
     public const ushort VkControl = 0x11;
     public const ushort VkEscape = 0x1B;
+    public const ushort VkShift = 0x10;
     public const ushort VkA = 0x41;
+    public const ushort VkW = 0x57;
     public const ushort VkF10 = 0x79;
 
     private static bool _dpiChecked;
@@ -78,6 +80,32 @@ internal static class SyntheticInput
 
         // 離すのは必ず行う。押したままにすると利用者の操作に影響が残る。
         return SendKey(VkControl, true) && ok;
+    }
+
+    /// <summary>
+    /// Ctrl と Shift を押しながら1つの鍵を押す。即実行(Ctrl+Shift+W)に使う。
+    ///
+    /// <paramref name="holdMs"/> は、鍵を離す前に修飾キーを押したままにする時間。
+    /// 0 にしてはいけない。アプリはホットキーのフックの中から
+    /// <c>Ctrl+C</c> を送出するため、こちらが即座に Ctrl を離すと、アプリの
+    /// Ctrl 押下とこちらの Ctrl 解放が入れ替わり、**C が素の文字として相手のアプリへ
+    /// 打ち込まれる**(実際に、選択していた34文字が「c」1文字に置き換わった)。
+    /// 人が押す場合は指が乗っているので起きない。人の打鍵に合わせて待つ。
+    /// </summary>
+    public static bool TapWithControlShift(ushort key, int holdMs = 250)
+    {
+        if (!SendKey(VkControl, false) || !SendKey(VkShift, false))
+        {
+            return false;
+        }
+
+        var ok = SendKey(key, false) && SendKey(key, true);
+
+        Thread.Sleep(Math.Max(1, holdMs));
+
+        // 離すのは必ず行う。押したままにすると利用者の操作に影響が残る。
+        var released = SendKey(VkShift, true) && SendKey(VkControl, true);
+        return released && ok;
     }
 
     private static bool SendKey(ushort key, bool up)

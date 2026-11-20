@@ -26,6 +26,7 @@ namespace TextPolish.Tests.Harness;
 ///   TextPolish.Tests --drive palette --close    最後に「キャンセル」で閉じる
 ///   TextPolish.Tests --drive tray               トレイを右クリックしてメニューを出す
 ///   TextPolish.Tests --drive run                整形を実行して結果を読む(スタブ必須)
+///   TextPolish.Tests --drive quick              即実行のホットキーを連打する(スタブ必須)
 /// </summary>
 internal static class UiaDriver
 {
@@ -60,6 +61,7 @@ internal static class UiaDriver
             "palette" => DrivePalette(pids, args),
             "tray" => DriveTray(),
             "run" => DriveRun(pids, args, processes[0]),
+            "quick" => DriveQuick(args, processes[0]),
             _ => Unknown(scenario),
         };
     }
@@ -67,7 +69,7 @@ internal static class UiaDriver
     private static int Unknown(string scenario)
     {
         Console.WriteLine($"知らない試作名です: {scenario}");
-        Console.WriteLine("使えるのは palette / tray / run");
+        Console.WriteLine("使えるのは palette / tray / run / quick");
         return 1;
     }
 
@@ -156,19 +158,31 @@ internal static class UiaDriver
             Toggler(preset)?.Toggle();
         }
 
-        if (args.Contains("--close", StringComparer.OrdinalIgnoreCase))
-        {
-            var close = ById(palette, "CloseButton");
+        ClosePaletteIfAsked(palette, args);
+        return Report(failures);
+    }
 
-            if (close is not null)
-            {
-                Invoker(close)?.Invoke();
-                Console.WriteLine();
-                Console.WriteLine("「キャンセル」を押して閉じました。");
-            }
+    /// <summary>
+    /// <c>--close</c> が付いていればパレットを閉じる。次の確認を同じ状態から
+    /// 始められるようにするため、各試作の最後に通す。
+    /// </summary>
+    private static void ClosePaletteIfAsked(AutomationElement palette, string[] args)
+    {
+        if (!args.Contains("--close", StringComparer.OrdinalIgnoreCase))
+        {
+            return;
         }
 
-        return Report(failures);
+        var close = ById(palette, "CloseButton");
+
+        if (close is null)
+        {
+            return;
+        }
+
+        Invoker(close)?.Invoke();
+        Console.WriteLine();
+        Console.WriteLine("「キャンセル」を押して閉じました。");
     }
 
     private static void ReportState(AutomationElement palette)
@@ -460,15 +474,66 @@ internal static class UiaDriver
         }
 
         var failures = 0;
-        runner.Invoke();
-        Console.WriteLine("「実行」を押しました。");
+        var presses = Math.Max(1, IntArg(args, "--presses", 1));
 
-        // 整形中は「実行」が押せなくなるはず(排他)。遅延を入れたスタブなら捉えられる。
-        var becameBusy = WaitUntil(() => !Safe(() => run!.Current.IsEnabled), 2000, 50);
-        Console.WriteLine($"  整形中に「実行」が押せなくなった: {becameBusy}");
+        for (var i = 0; i < presses; i++)
+        {
+            runner.Invoke();
+            Thread.Sleep(150);
+        }
+
+        Console.WriteLine(presses == 1 ? "「実行」を押しました。" : $"「実行」を {presses} 回押しました。");
+
+        // 整形中、「実行」は無効にならず**「中止」に変わる**(PaletteWindow.SetBusy)。
+        // 押せるかどうかではなく、名前で見る。
+        var becameBusy = WaitUntil(
+            () => Squash(Safe(() => run!.Current.Name)) == "中止", 3000, 50);
+        Console.WriteLine($"  整形中に「中止」へ変わった: {becameBusy}");
+        failures += Check(becameBusy, "整形中かどうかを「中止」の表示で判別できる");
+
+        // 整形中はプリセットを変えられない(PresetPanel.IsEnabled = false)。
+        var presetLocked = !Safe(() => preset!.Current.IsEnabled);
+        Console.WriteLine($"  整形中にプリセットが固まった: {presetLocked}");
+        failures += Check(presetLocked, "整形中はプリセットを変えられない");
 
         var timeout = IntArg(args, "--timeout", 30) * 1000;
         var apply = ById(palette, "ApplyButton");
+
+        if (args.Contains("--cancel", StringComparer.OrdinalIgnoreCase))
+        {
+            // いまの「実行」は「中止」なので、同じボタンを押すと取り消しになる。
+            runner.Invoke();
+            Console.WriteLine("  「中止」を押しました。");
+
+            var backToIdle = WaitUntil(
+                () => Squash(Safe(() => run!.Current.Name)) == "実行", timeout, 100);
+            Console.WriteLine($"  「実行」へ戻った: {backToIdle}");
+            failures += Check(backToIdle, "中止すると待機状態へ戻る");
+
+            var applyStillOff = apply is not null && !Safe(() => apply.Current.IsEnabled);
+            Console.WriteLine($"  中止後も「置き換える」は押せない: {applyStillOff}");
+            failures += Check(applyStillOff, "中止した結果は書き戻せない");
+
+            ClosePaletteIfAsked(palette, args);
+            return Report(failures);
+        }
+
+        if (args.Contains("--expect-fail", StringComparer.OrdinalIgnoreCase))
+        {
+            // 採用しない応答(途中終了・HTTPエラー・壊れたJSON)のとき。
+            // 整形は終わるが、結果は書き戻せないままであるべき。
+            var settled = WaitUntil(
+                () => Squash(Safe(() => run!.Current.Name)) == "実行", timeout, 100);
+            Console.WriteLine($"  整形が終わって「実行」へ戻った: {settled}");
+            failures += Check(settled, "採用しない応答でも待機状態へ戻る");
+
+            var stillOff = apply is not null && !Safe(() => apply.Current.IsEnabled);
+            Console.WriteLine($"  「置き換える」は押せないまま: {stillOff}");
+            failures += Check(stillOff, "採用しない応答は書き戻せない");
+
+            ClosePaletteIfAsked(palette, args);
+            return Report(failures);
+        }
 
         var finished = WaitUntil(
             () => apply is not null && Safe(() => apply.Current.IsEnabled), timeout);
@@ -492,6 +557,86 @@ internal static class UiaDriver
         Console.WriteLine();
         Console.WriteLine("「置き換える」は押していません(押すと元の文章が置き換わるため)。");
 
+        ClosePaletteIfAsked(palette, args);
+        return Report(failures);
+    }
+
+    // ------------------------------------------------------------------
+    // 即実行(確認画面を出さない経路)
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// 即実行のホットキーを連打して、1回しか整形されないことを見る(D1・D2)。
+    ///
+    /// ボタンの連打では排他を見られない。整形中の「実行」は無効にならず
+    /// 「中止」に変わるため、2回目は取り消しになってしまう。排他(OperationGate)が
+    /// 効くのはホットキー側である。
+    ///
+    /// 即実行は結果を前面のウィンドウへ貼り付けて原文を置き換える。置き換わるのは
+    /// この試作が出した窓の中だけなので、利用者の文章は触らない。
+    /// 何回呼ばれたかはスタブの画面に出る(1件目・2件目…)。
+    /// </summary>
+    private static int DriveQuick(string[] args, Process app)
+    {
+        if (!EndpointIsLoopback(app, out var endpoint))
+        {
+            Console.WriteLine("Endpoint がループバックではありません。整形を走らせません。");
+            Console.WriteLine($"  いまの Endpoint: {endpoint}");
+            return 1;
+        }
+
+        var text = StringArg(args, "--text", "きょうのかいぎでけっていしたことを、かじょうがきでまとめてください。");
+        _source = TextSourceWindow.Open(text);
+
+        if (_source is null)
+        {
+            Console.WriteLine("文章の窓を出せませんでした。");
+            return 1;
+        }
+
+        var presses = Math.Max(1, IntArg(args, "--presses", 3));
+        Console.WriteLine($"文章の窓を出しました。選択されている文字数: {_source.SelectedLength}");
+
+        for (var i = 0; i < presses; i++)
+        {
+            if (!SyntheticInput.TapWithControlShift(
+                SyntheticInput.VkW, IntArg(args, "--hold", 250)))
+            {
+                Console.WriteLine("ホットキーを送れませんでした。");
+                return Report(1);
+            }
+
+            Thread.Sleep(120);
+        }
+
+        Console.WriteLine($"Ctrl+Shift+W を {presses} 回送りました。");
+
+        var timeout = IntArg(args, "--timeout", 40) * 1000;
+        var expected = StringArg(args, "--expect", string.Empty);
+
+        var replaced = WaitUntil(() => _source.Content != text, timeout, 250);
+        Console.WriteLine($"  窓の中身が置き換わった: {replaced}");
+
+        var failures = Check(replaced, "即実行で前面のウィンドウへ書き戻せる");
+
+        if (expected.Length > 0)
+        {
+            var now = Squash(_source.Content);
+            var match = now == expected;
+            Console.WriteLine($"  スタブが返した文字列と一致: {match}");
+
+            if (!match)
+            {
+                // 一致しないときだけ中身を出す。この文章は試作が用意したものなので、
+                // 利用者の文章を画面に残すことにはならない。
+                Console.WriteLine($"  診断: 窓の中身は「{Trim(now, 50)}」({now.Length} 文字)");
+            }
+
+            failures += Check(match, "書き戻された文章が整形結果と一致する");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("何回整形されたかは、スタブの画面の「n件目」を見てください(1件だけが正解)。");
         return Report(failures);
     }
 
@@ -523,29 +668,33 @@ internal static class UiaDriver
             }
 
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var found = new List<string>();
+            var root = document.RootElement;
 
-            foreach (var section in document.RootElement.EnumerateObject())
-            {
-                if (section.Value.ValueKind == JsonValueKind.Object
-                    && section.Value.TryGetProperty("Endpoint", out var value)
-                    && value.ValueKind == JsonValueKind.String)
-                {
-                    found.Add(value.GetString() ?? string.Empty);
-                }
-            }
+            // どのプロバイダで動いているかは LlmProvider に書いてある。
+            // 選ばれていないプロバイダの Endpoint は使われないため、見ない
+            // (テンプレートの TODO が残っているだけで止まってしまう)。
+            var provider = root.TryGetProperty("LlmProvider", out var name)
+                && name.ValueKind == JsonValueKind.String
+                    ? name.GetString()
+                    : null;
 
-            if (found.Count == 0)
+            if (provider is null)
             {
-                endpoint = "(Endpoint の項目がありません)";
+                endpoint = "(LlmProvider の項目がありません)";
                 return false;
             }
 
-            endpoint = string.Join(" / ", found);
+            if (!root.TryGetProperty(provider, out var section)
+                || section.ValueKind != JsonValueKind.Object
+                || !section.TryGetProperty("Endpoint", out var value)
+                || value.ValueKind != JsonValueKind.String)
+            {
+                endpoint = $"({provider} の Endpoint が読めません)";
+                return false;
+            }
 
-            // どれか1つでも外向きなら止める。どのプロバイダが選ばれているかは
-            // ここからは分からないため、安全側に倒す。
-            return found.All(IsLoopback);
+            endpoint = $"{provider}: {value.GetString()}";
+            return IsLoopback(value.GetString() ?? string.Empty);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException
             or InvalidOperationException)

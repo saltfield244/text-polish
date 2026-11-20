@@ -97,6 +97,9 @@ internal sealed class TextSourceWindow : IDisposable
 
     public int SelectedLength => Run(() => _box.SelectedText.Length);
 
+    /// <summary>窓の中身。即実行で書き戻されたかを見るために読む。</summary>
+    public string Content => Run(() => _box.Text) ?? string.Empty;
+
     public void Dispose()
     {
         Run(() => _form.Close());

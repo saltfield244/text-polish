@@ -46,6 +46,10 @@ internal static class StubServerConsole
             return 1;
         }
 
+        // 受け取ったら1行出す。本文は出さず、回数と宛先と長さだけ。
+        server.OnRequest = (count, request) => Console.WriteLine(
+            $"{Environment.NewLine}  [{count}件目] {request.Method} {request.Target} / 本文 {request.DecodedBody.Length} 文字{Environment.NewLine}> ");
+
         using (server)
         {
             PrintBanner(server);

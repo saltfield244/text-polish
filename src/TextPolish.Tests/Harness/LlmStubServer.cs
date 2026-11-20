@@ -154,6 +154,12 @@ internal sealed class LlmStubServer : IDisposable
     }
 
     /// <summary>受け取ったリクエストの件数。排他の確認(1回しか呼ばれないこと)に使う。</summary>
+    /// <summary>
+    /// リクエストを受け取るたびに呼ばれる。回数と中身を渡す。
+    /// 画面へ出すのは呼び出し側の役目(本文をそのまま出さないため)。
+    /// </summary>
+    public Action<int, StubRequest>? OnRequest { get; set; }
+
     public int RequestCount
     {
         get
@@ -244,10 +250,18 @@ internal sealed class LlmStubServer : IDisposable
                     return;
                 }
 
+                int count;
+
                 lock (_lock)
                 {
                     _requests.Add(request);
+                    count = _requests.Count;
                 }
+
+                // 受け取ったことをその場で知らせる。手で確認しているときに
+                // 「押したのに来ていない」「2回来ている」が画面で分かる
+                // (--stub の実行中は標準入力で count を打てないため、ここで出す)。
+                OnRequest?.Invoke(count, request);
 
                 // Scenario はリクエストごとに1度だけ読む。処理の途中で差し替えられても、
                 // 1件の応答の中で内容が食い違わないようにするため。
