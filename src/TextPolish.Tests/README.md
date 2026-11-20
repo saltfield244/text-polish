@@ -79,6 +79,69 @@ dotnet run --project src\TextPolish.Tests -- --stub --delay 5000
 **元のエンドポイントに戻してください**。スタブで確認した項目は、本物のプロバイダの挙動を
 確認したことにはなりません。記録には「スタブで確認」と明記します。
 
+### 動いているアプリを UI Automation で覗く・操作する
+
+実機確認のうち、画面を見て押す部分も自動で流せます。UIA2
+(`System.Windows.Automation`。Windows デスクトップ SDK に入っているので外部NuGetは
+増えません)を使い、アプリ本体が `ActiveWindowContextProvider` で使っているものと同じです。
+
+```
+dotnet run --project src\TextPolish.Tests -- --inspect
+```
+
+`--inspect` は**読み取りしかしません**。クリックもキー送出もしないので、誰かが同じアプリで
+手作業の確認をしている最中でも流せます。例外は `--open-tray` だけで、通知領域の
+「非表示のアイコンを表示する」を1回押します(アプリには触りません)。トレイアイコンは
+隠れたアイコンの中にあると、開くまで UIA の木に現れません。
+
+```
+dotnet run --project src\TextPolish.Tests -- --drive palette --open --close
+```
+
+`--drive` は実際に操作します。**本物のクリックが飛ぶため、手作業の確認と同時には
+流さないでください。**`--open` を付けると、文章の窓を自分で出してホットキーまで送るので、
+人がどこかで文字を選んでおく必要はありません。
+
+| 試作 | すること |
+|---|---|
+| `--drive palette` | 原文を読む・プリセットを切り替える・自由指示を入れる・有効無効を見る |
+| `--drive tray` | トレイを右クリックして「設定」「終了」を辿る(D11・D12) |
+| `--drive run` | 整形を走らせ、結果がスタブの返した文字列と一致するかを見る |
+
+`--drive run` は `appsettings.json` の `Endpoint` がループバックでなければ**拒否します**。
+本物のプロバイダを呼ぶと課金され、応答時間も揃わないためです。先に `--stub` を立てて
+`Endpoint` を向けてください。
+
+**「置き換える」は押しません。** 押すと利用者が書いた文章が置き換わるためです。
+原文と整形結果も画面に出しません(長さと一致判定だけを出します)。
+
+UIA から何が見えるかは実測しました。自動化を足すときの前提になります。
+
+| 要素 | 引き方 | できること |
+|---|---|---|
+| 実行 | `AutomationId=RunButton` | Invoke |
+| 置き換える | `AutomationId=ApplyButton` | Invoke。結果が無い間は無効 |
+| キャンセル | `AutomationId=CloseButton` | Invoke |
+| 差分表示 | `AutomationId=ShowDiffCheckBox` | Toggle。結果が無い間は無効 |
+| 選択中のテキスト | `AutomationId=OriginalTextBox` | Value で読める |
+| 整形結果 | `AutomationId=ResultTextBox` | Value で読める |
+| 自由指示 | `AutomationId=InstructionBox` | Value で読み書き。履歴は ItemContainer |
+| プリセット | 名前(「整える」等)**と種類** | Toggle。AutomationId は無い |
+| トレイアイコン | 名前の部分一致 | Invoke(左クリック相当)。右クリックは座標が必要 |
+| トレイメニュー | 項目名 | Invoke |
+
+注意が3つあります。
+
+- **プリセットは種類で絞らないと引けません。** 同じ名前の `TextBlock` が隣にいて、
+  名前だけで引くとそちらを掴みます。`TextBlock` は Toggle を持たないため、
+  掴み間違えると後段で失敗して原因が分かりにくくなります
+- **トレイアイコンの名前は完全一致では引けません。** `SetStatus` が状態を後ろに足します
+  (「テキスト整形ツール - 整形中...」)
+- **トレイの座標は開くたびに変わります。** `BoundingRectangle` は押す直前に取り直します
+
+有効・無効が UIA から見えるので、「整形中は押せない」「結果が無い間は置き換えられない」は
+ログではなく `IsEnabled` で直接確かめられます。
+
 | 区分 | 確認していること |
 |---|---|
 | 設定 | v1.0.1 の平文 `ApiKey` を3プロバイダとも暗号化して移行し、ファイルに平文が残らない |
@@ -137,6 +200,11 @@ dotnet run --project src\TextPolish.Tests -- --stub --delay 5000
 | スタブ | Gemini のキーがURLクエリに乗ることを固定し、ログには残らないことを確認 |
 | ログ照合 | 原文の断片・生のAPIキー・改行で割れた記録を見つける。秘匿済み(`(秘匿)`)の行は誤検知しない |
 | ログ照合 | 操作の前後の差分だけを見られる / 行が現れるまで待てる / 水準ごとに数えられる |
+| UIA | 整形パレットの要素を AutomationId・名前と種類で引ける(実測済み。上の表が前提) |
+| UIA | 原文・整形結果・自由指示を Value で読み書きできる |
+| UIA | 有効・無効を IsEnabled で見られる(「結果が無い間は置き換えられない」をログ無しで確かめる) |
+| UIA | 文章の窓を自分で出し、ホットキーを送ってパレットを開ける(人手が要らない) |
+| UIA | トレイアイコンを名前の部分一致で探し、右クリックで「設定」「終了」を辿れる |
 
 `PasteTarget` / `PolishResultState` / `LlmResponseReader` / `LlmPromptBuilder` は、
 Win32呼び出しもHTTPも含まない純粋な判定として切り出してあります。そのため組み合わせを

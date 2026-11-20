@@ -9,6 +9,8 @@ namespace TextPolish.Tests;
 ///   TextPolish.Tests                全テストを実行
 ///   TextPolish.Tests --no-clipboard クリップボードを使うテストを除く(CI・リモート実行向け)
 ///   TextPolish.Tests --stub         テストではなく、手動確認用のLLMスタブを立てる
+///   TextPolish.Tests --inspect      テストではなく、動いているアプリをUI Automationで覗く
+///   TextPolish.Tests --drive palette テストではなく、動いているアプリを実際に操作する
 ///
 /// クリップボードのテストは実際のクリップボードを書き換える。実行前の内容は
 /// テスト対象の ClipboardSnapshot 自身で退避し、終了時に戻す。
@@ -25,6 +27,21 @@ internal static class Program
         if (args.Contains("--stub", StringComparer.OrdinalIgnoreCase))
         {
             return Harness.StubServerConsole.Run(args);
+        }
+
+        // --inspect もテストを実行しない。動いているアプリを UI Automation で覗くだけで、
+        // クリックもキー送出もしない(Harness/UiaInspector.cs 参照)。
+        if (args.Contains("--inspect", StringComparer.OrdinalIgnoreCase))
+        {
+            return Harness.UiaInspector.Run(args);
+        }
+
+        // --drive はテストを実行せず、動いているアプリを実際に操作する。
+        // 本物のクリックが飛ぶので、誰かが同じアプリで手作業の確認をしている間は
+        // 流さないこと(Harness/UiaDriver.cs 参照)。
+        if (args.Contains("--drive", StringComparer.OrdinalIgnoreCase))
+        {
+            return Harness.UiaDriver.Run(args);
         }
 
         var includeClipboard = !args.Contains("--no-clipboard", StringComparer.OrdinalIgnoreCase);
