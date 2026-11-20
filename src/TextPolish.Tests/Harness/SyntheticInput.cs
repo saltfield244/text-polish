@@ -33,6 +33,7 @@ internal static class SyntheticInput
     public const ushort VkShift = 0x10;
     public const ushort VkA = 0x41;
     public const ushort VkW = 0x57;
+    public const ushort VkF8 = 0x77;
     public const ushort VkF10 = 0x79;
 
     private static bool _dpiChecked;

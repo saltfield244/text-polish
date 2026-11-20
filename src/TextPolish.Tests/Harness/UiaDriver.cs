@@ -56,6 +56,16 @@ internal static class UiaDriver
         Console.WriteLine($"試すこと: {scenario}");
         Console.WriteLine();
 
+        if (scenario.Length == 2 && scenario[0] == 'd' && char.IsDigit(scenario[1]))
+        {
+            return ChecklistD.Run(scenario, args, processes[0], pids);
+        }
+
+        if (scenario is "d" or "d10" or "d11" or "d12")
+        {
+            return ChecklistD.Run(scenario, args, processes[0], pids);
+        }
+
         return scenario switch
         {
             "palette" => DrivePalette(pids, args),
@@ -200,7 +210,7 @@ internal static class UiaDriver
     /// 整形パレットを探す。設定画面も開いていることがあるため、タイトルではなく
     /// 中身(RunButton があるか)で見分ける。表示文字列の変更に強い。
     /// </summary>
-    private static AutomationElement? FindPalette(List<int> pids) =>
+    internal static AutomationElement? FindPalette(List<int> pids) =>
         TopLevelWindows(pids).FirstOrDefault(w => ById(w, "RunButton") is not null);
 
     // ------------------------------------------------------------------
@@ -599,6 +609,11 @@ internal static class UiaDriver
 
         for (var i = 0; i < presses; i++)
         {
+            // 送る直前の状態を残す。失敗したとき「アプリが悪いのか、こちらの
+            // 用意が崩れていたのか」を後から切り分けるため。
+            Console.WriteLine(
+                $"  送る直前: 前面={_source.IsForeground} / 選択={_source.SelectedLength}文字");
+
             if (!SyntheticInput.TapWithControlShift(
                 SyntheticInput.VkW, IntArg(args, "--hold", 250)))
             {
@@ -646,7 +661,7 @@ internal static class UiaDriver
     /// 設定ファイルは exe と同じフォルダにある(%AppData% ではない)ので、
     /// 動いているプロセスの場所から辿る。どの設定で動いているかを取り違えないため。
     /// </summary>
-    private static bool EndpointIsLoopback(Process app, out string endpoint)
+    internal static bool EndpointIsLoopback(Process app, out string endpoint)
     {
         endpoint = "(読めませんでした)";
 

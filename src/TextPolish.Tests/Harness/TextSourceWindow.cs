@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace TextPolish.Tests.Harness;
@@ -74,16 +75,33 @@ internal sealed class TextSourceWindow : IDisposable
         if (window._ready.Wait(timeoutMs))
         {
             // 前面に出てからでないと、ホットキーを送っても別のアプリの選択を拾う。
-            window.Activate();
-            return window;
+            if (window.Activate())
+            {
+                return window;
+            }
+
+            Console.WriteLine("文章の窓を前面にできませんでした(ほかのアプリが前面を握っています)。");
+            window.Dispose();
+            return null;
         }
 
         window.Dispose();
         return null;
     }
 
-    /// <summary>前面に出して、選択を作り直す。</summary>
-    public void Activate()
+    /// <summary>
+    /// 前面に出して、選択を作り直す。本当に前面になったかを返す。
+    ///
+    /// ここを確かめるのが要。アプリはホットキーを受けると**前面のウィンドウへ**
+    /// Ctrl+C を送る。前面でないまま送ると、選択テキストの取得が失敗し、
+    /// 「アプリの不具合」に見えてしまう。さらに悪いことに、Ctrl+C がこちらを
+    /// 動かしているコンソールへ飛ぶと、確認そのものが中断される。
+    ///
+    /// <c>Form.Activate</c> だけでは足りない。Windows は、最後に入力を受けた
+    /// プロセス以外からの前面化を拒むため、相手のスレッドへ一時的に入力をつないでから
+    /// 頼む(AttachThreadInput)。それでも拒まれることがあるので、戻り値で確かめる。
+    /// </summary>
+    public bool Activate()
     {
         Run(() =>
         {
@@ -92,10 +110,79 @@ internal sealed class TextSourceWindow : IDisposable
             _box.SelectAll();
         });
 
-        Thread.Sleep(300);
+        var handle = Run(() => _form.Handle);
+
+        for (var i = 0; i < 20; i++)
+        {
+            if (GetForegroundWindow() == handle)
+            {
+                // 前面になってから選択を作り直す(焦点が移ると選択が外れることがある)。
+                Run(() =>
+                {
+                    _box.Focus();
+                    _box.SelectAll();
+                });
+
+                Thread.Sleep(150);
+                return true;
+            }
+
+            ForceForeground(handle);
+            Thread.Sleep(150);
+        }
+
+        return false;
     }
 
+    /// <summary>入力を一時的につないでから前面化を頼む。</summary>
+    private static void ForceForeground(IntPtr handle)
+    {
+        var foreground = GetForegroundWindow();
+        var theirThread = GetWindowThreadProcessId(foreground, out _);
+        var myThread = GetCurrentThreadId();
+        var attached = theirThread != 0 && theirThread != myThread
+            && AttachThreadInput(myThread, theirThread, true);
+
+        try
+        {
+            ShowWindow(handle, 5);
+            BringWindowToTop(handle);
+            SetForegroundWindow(handle);
+        }
+        finally
+        {
+            if (attached)
+            {
+                AttachThreadInput(myThread, theirThread, false);
+            }
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr handle, int command);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
     public int SelectedLength => Run(() => _box.SelectedText.Length);
+
+    /// <summary>この窓が前面かどうか。ホットキーを送る直前に確かめる。</summary>
+    public bool IsForeground => GetForegroundWindow() == Run(() => _form.Handle);
 
     /// <summary>窓の中身。即実行で書き戻されたかを見るために読む。</summary>
     public string Content => Run(() => _box.Text) ?? string.Empty;
