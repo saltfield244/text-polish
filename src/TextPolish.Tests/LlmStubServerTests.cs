@@ -171,12 +171,21 @@ internal static class LlmStubServerTests
         // 実機確認で「整形中」の状態を作るための要。短くても効いていることを測る。
         const int delayMs = 400;
 
-        var started = Environment.TickCount64;
+        // 指定より少し早く返ることがある。Windows のタイマーの刻みは既定で約15.6msで、
+        // `Task.Delay` は1刻みぶん早く起きうるし、計測側の時計も同じ刻みでしか進まない。
+        // CI では実際に「391ms < 400ms」で落ちた(2026-11-20、run #19)。
+        // ここで見たいのは**遅延が効いていること**であって、精度ではないため、
+        // 刻み3つぶんを許容する。これより大きく外れれば遅延が効いていない。
+        const int toleranceMs = 50;
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         var (text, _) = Run(Provider.OpenAi, new StubScenario { DelayMs = delayMs, Text = "遅延つき" });
-        var elapsed = Environment.TickCount64 - started;
+        var elapsed = watch.ElapsedMilliseconds;
 
         Assert.Equal("遅延つき", text, "遅延つきの整形結果");
-        Assert.True(elapsed >= delayMs, $"指定より早く返っている: {elapsed}ms < {delayMs}ms");
+        Assert.True(
+            elapsed >= delayMs - toleranceMs,
+            $"指定より早く返っている: {elapsed}ms < {delayMs - toleranceMs}ms(許容 {toleranceMs}ms)");
     }
 
     private static void ScenarioCanBeSwappedWhileRunning()
