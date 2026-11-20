@@ -63,7 +63,7 @@ internal static class Program
         }
 
         var userClipboard = includeClipboard ? ClipboardSnapshot.Capture(new NullLogger()) : null;
-        var failed = 0;
+        var failures = new List<string>();
 
         try
         {
@@ -76,9 +76,10 @@ internal static class Program
                 }
                 catch (Exception ex)
                 {
-                    failed++;
+                    var detail = $"{ex.GetType().Name}: {ex.Message}";
+                    failures.Add($"{name} / {detail}");
                     Console.WriteLine($"  FAIL  {name}");
-                    Console.WriteLine($"        {ex.GetType().Name}: {ex.Message}");
+                    Console.WriteLine($"        {detail}");
                 }
             }
         }
@@ -88,8 +89,37 @@ internal static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine($"{tests.Count - failed}/{tests.Count} 件成功");
-        return failed == 0 ? 0 : 1;
+        Console.WriteLine($"{tests.Count - failures.Count}/{tests.Count} 件成功");
+        ReportToGitHubActions(failures);
+        return failures.Count == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// GitHub Actions で流れているときに、失敗したテスト名を注記(annotation)として出す。
+    ///
+    /// 実行ログは公開リポジトリでも**サインインしないと読めない**。一方で注記は
+    /// コミットのチェック画面にそのまま出るため、「どのテストが落ちたか」を
+    /// ログを開かずに追えるようにしておく。メールの通知からも辿れる。
+    ///
+    /// 外部パッケージは使わない。Actions が決めた出力形式に1行ずつ書くだけ。
+    /// Actions の外(手元での実行)では何も出さない。
+    /// </summary>
+    private static void ReportToGitHubActions(List<string> failures)
+    {
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || failures.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var failure in failures)
+        {
+            // 改行とコロンは書式を壊すので落とす(注記は1件1行)。
+            var line = failure
+                .Replace('\r', ' ')
+                .Replace('\n', ' ')
+                .Replace("::", ": ");
+            Console.WriteLine($"::error title=テスト失敗::{line}");
+        }
     }
 }
 

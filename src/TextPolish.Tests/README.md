@@ -26,6 +26,11 @@ dotnet run --project src\TextPolish.Tests
   ```
   dotnet run --project src\TextPolish.Tests -- --no-clipboard
   ```
+- **GitHub Actions で流れているときは、失敗したテスト名を注記(annotation)として出します**
+  (`GITHUB_ACTIONS=true` のときだけ。手元の実行では何も出ません)。
+  実行ログは公開リポジトリでも**サインインしないと読めない**一方、注記はコミットの
+  チェック画面とメール通知に出るため、ログを開かずに「どのテストが落ちたか」を追えます。
+  わざと1件落として、注記が出ることを確かめてあります。
 
 ### Smart App Control が有効なPCでの実行
 
