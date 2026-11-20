@@ -50,6 +50,7 @@ public partial class App : Application
 
         NotifyIfApiKeyUnreadable();
         LogPromptFileLocations();
+        LogDestination();
 
         // HttpClient.Timeout は生成後に変更できないため、設定変更時は再起動が必要
         // (OnSettingsSavedのログでその旨を案内している)。
@@ -139,7 +140,8 @@ public partial class App : Application
                 context.AppName,
                 surroundingContext,
                 _history,
-                _logger);
+                _logger,
+                LlmDestination.Describe(_settings));
 
             _paletteWindow.Closed += (_, _) =>
             {
@@ -445,6 +447,19 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// いまどこへ送るのかをログに残す。許可リストでホストを縛る案もあったが、
+    /// 正当な送信先が増え続けて運用が破綻するため、縛らずに**見えるように**した
+    /// (<see cref="LlmDestination"/> 参照)。
+    ///
+    /// 即実行(ホットキー一発で書き戻す経路)には確認画面が無く、利用者が送信先を
+    /// 目にする機会がない。その経路ではこのログだけが記録になる。
+    /// </summary>
+    private void LogDestination()
+    {
+        _logger.Info($"送信先: {LlmDestination.Describe(_settings)}");
+    }
+
     private void ShowSettingsWindow()
     {
         // 設定画面を開く直前にファイルから読み直す。
@@ -513,6 +528,10 @@ public partial class App : Application
         _logger.Info(
             "設定を保存しました(ホットキーは即時反映、LLMプロバイダは次回実行から反映、" +
             "RequestTimeoutSeconds は再起動後に反映)。");
+
+        // プロバイダやエンドポイントを変えた直後がいちばん確かめたい瞬間なので、
+        // 保存のたびに送信先を出し直す。
+        LogDestination();
     }
 
     /// <summary>復号できないAPIキーがあれば、整形が失敗する理由が分かるよう起動時に知らせる。</summary>

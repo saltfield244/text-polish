@@ -19,7 +19,14 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="選択中のテキスト" FontWeight="Bold" Margin="0,0,0,4"/>
+        <!-- 送信先は見出しと同じ行に右寄せで置く。整形を実行するかどうか決める直前に、
+             文章がどこへ出ていくのかが目に入るようにするため。スキームとホストまでしか
+             出さない(パスにモデル名、クエリにAPIキーが載りうる。LlmDestination 参照)。 -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+            <TextBlock x:Name="DestinationText" DockPanel.Dock="Right" Foreground="Gray"
+                       VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <TextBlock Text="選択中のテキスト" FontWeight="Bold" VerticalAlignment="Center"/>
+        </DockPanel>
         <TextBox Grid.Row="1" x:Name="OriginalTextBox" IsReadOnly="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" Background="#F5F5F5"/>
 

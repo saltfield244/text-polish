@@ -201,7 +201,26 @@ internal static class UiaDriver
         Console.WriteLine($"  「置き換える」: {(applyEnabled ? "押せる" : "押せない")}");
         failures += Check(!applyEnabled, "整形前は「置き換える」が押せない");
 
-        // 5. プリセットは元に戻す。
+        // 5. 送信先が出ていること。許可リストでホストを縛る代わりに「見えるようにする」
+        //    方を選んだので、**実際に目に入る位置に出ているか**がこの確認の要になる。
+        //    文字列そのものの作りは LlmDestinationTests が固定している。
+        var destination = ById(palette, "DestinationText");
+        var destinationText = destination is null ? null : Safe(() => destination.Current.Name);
+
+        Console.WriteLine($"  送信先の表示: {destinationText ?? "(見つかりません)"}");
+        failures += Check(
+            destinationText is not null && destinationText.StartsWith("送信先: ", StringComparison.Ordinal),
+            "パレットに送信先が出ている");
+
+        // パスとクエリが出ていると、モデル名や配置名、さらにAPIキーまで画面に出る。
+        // パレットはスクリーンショットを撮られる画面なので、ここは効く。
+        failures += Check(
+            destinationText is null
+                || (!destinationText.Contains("key=", StringComparison.OrdinalIgnoreCase)
+                    && destinationText.Count(c => c == '/') <= 2),
+            "送信先はスキームとホストまでしか出ていない");
+
+        // 6. プリセットは元に戻す。
         if (preset is not null)
         {
             Toggler(preset)?.Toggle();

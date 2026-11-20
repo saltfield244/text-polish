@@ -68,7 +68,8 @@ public partial class PaletteWindow : Window
         string? activeAppName,
         string? surroundingContext,
         InstructionHistory history,
-        IAppLogger logger)
+        IAppLogger logger,
+        string destination)
     {
         InitializeComponent();
 
@@ -82,6 +83,7 @@ public partial class PaletteWindow : Window
         _logger = logger;
 
         OriginalTextBox.Text = selection.Text;
+        DestinationText.Text = $"送信先: {destination}";
         BuildPresetToggles();
         InstructionBox.ItemsSource = _history.Entries;
         PositionNearCursor();

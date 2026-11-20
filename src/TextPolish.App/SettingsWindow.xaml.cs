@@ -251,18 +251,21 @@ public partial class SettingsWindow : Window
     /// </summary>
     private bool ValidateSelectedEndpoint()
     {
-        var (name, endpoint) =
+        // 呼び名は LlmDestination に寄せる。こことログで違う名前になると、
+        // 利用者は同じプロバイダの話だと分からない。
+        var (provider, endpoint) =
             GeminiRadio.IsChecked == true ? ("Gemini", GeminiEndpointBox.Text.Trim())
             : OpenAiCompatibleRadio.IsChecked == true
-                ? ("OpenAI互換", OpenAiEndpointBox.Text.Trim())
-                : ("Azure OpenAI", AzureEndpointBox.Text.Trim());
+                ? ("OpenAiCompatible", OpenAiEndpointBox.Text.Trim())
+                : ("AzureOpenAI", AzureEndpointBox.Text.Trim());
 
         if (EndpointPolicy.IsAllowed(endpoint, out var reason))
         {
             return true;
         }
 
-        EndpointWarning.Text = $"{name} のエンドポイントを保存できません。{reason}";
+        EndpointWarning.Text =
+            $"{LlmDestination.ProviderName(provider)} のエンドポイントを保存できません。{reason}";
         EndpointWarning.Visibility = Visibility.Visible;
         return false;
     }
