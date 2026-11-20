@@ -20,6 +20,7 @@ namespace TextPolish.Tests.Harness;
 ///   - 「置き換える」は押さない。押すと利用者が書いた文章が置き換わる
 ///   - 取得済みの原文・整形結果は画面に出さない(長さと一致判定だけ出す)
 ///   - run は Endpoint がループバックでなければ拒否する(本物のAPIを呼ぶと課金される)
+///     (本物へ投げたい F7 などは --allow-real を明示したときだけ通る)
 ///
 /// 使い方:
 ///   TextPolish.Tests --drive palette            開いているパレットを操作して状態を出す
@@ -531,12 +532,8 @@ internal static class UiaDriver
     /// </summary>
     private static int DriveRun(List<int> pids, string[] args, Process app)
     {
-        if (!EndpointIsLoopback(app, out var endpoint))
+        if (!AllowedToRun(app, args))
         {
-            Console.WriteLine("Endpoint がループバックではありません。整形を走らせません。");
-            Console.WriteLine($"  いまの Endpoint: {endpoint}");
-            Console.WriteLine("  --stub を立て、appsettings.json の Endpoint をそのURLにしてから実行してください。");
-            Console.WriteLine("  本物のプロバイダのままだと、課金され、応答時間も揃いません。");
             return 1;
         }
 
@@ -676,10 +673,8 @@ internal static class UiaDriver
     /// </summary>
     private static int DriveQuick(string[] args, Process app)
     {
-        if (!EndpointIsLoopback(app, out var endpoint))
+        if (!AllowedToRun(app, args))
         {
-            Console.WriteLine("Endpoint がループバックではありません。整形を走らせません。");
-            Console.WriteLine($"  いまの Endpoint: {endpoint}");
             return 1;
         }
 
@@ -741,6 +736,37 @@ internal static class UiaDriver
         Console.WriteLine();
         Console.WriteLine("何回整形されたかは、スタブの画面の「n件目」を見てください(1件だけが正解)。");
         return Report(failures);
+    }
+
+    /// <summary>
+    /// 本物のプロバイダを呼んでしまわないための関門。既定ではループバック以外を通さない。
+    ///
+    /// ただし F7(誤ったAPIキーで 401 を受ける)や、本物の鍵で一度だけ整形してみる確認は、
+    /// 本物のエンドポイントへ投げないと成り立たない。そこで --allow-real を明示したときだけ
+    /// 通し、何へ向いているかを画面に出す。付け忘れで課金されることがないよう、既定は拒否のまま。
+    /// 通し運転(D・E・G)はスタブ前提なのでこの抜け道を持たせない。
+    /// </summary>
+    private static bool AllowedToRun(Process app, string[] args)
+    {
+        if (EndpointIsLoopback(app, out var endpoint))
+        {
+            return true;
+        }
+
+        if (args.Contains("--allow-real", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("!! ループバックではないエンドポイントへ投げます(--allow-real)。");
+            Console.WriteLine($"   いまの Endpoint: {endpoint}");
+            Console.WriteLine("   本物のプロバイダなら課金されます。");
+            return true;
+        }
+
+        Console.WriteLine("Endpoint がループバックではありません。整形を走らせません。");
+        Console.WriteLine($"  いまの Endpoint: {endpoint}");
+        Console.WriteLine("  --stub を立て、appsettings.json の Endpoint をそのURLにしてから実行してください。");
+        Console.WriteLine("  本物のプロバイダのままだと、課金され、応答時間も揃いません。");
+        Console.WriteLine("  意図して本物へ投げるときだけ --allow-real を付けてください。");
+        return false;
     }
 
     /// <summary>
