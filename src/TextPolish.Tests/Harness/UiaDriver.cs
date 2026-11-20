@@ -27,6 +27,8 @@ namespace TextPolish.Tests.Harness;
 ///   TextPolish.Tests --drive tray               トレイを右クリックしてメニューを出す
 ///   TextPolish.Tests --drive run                整形を実行して結果を読む(スタブ必須)
 ///   TextPolish.Tests --drive quick              即実行のホットキーを連打する(スタブ必須)
+///   TextPolish.Tests --drive d                  実機確認の D1〜D10 を流す(スタブ必須)
+///   TextPolish.Tests --drive e                  実機確認の E を流す(スタブ必須)
 /// </summary>
 internal static class UiaDriver
 {
@@ -64,6 +66,12 @@ internal static class UiaDriver
         if (scenario is "d" or "d10" or "d11" or "d12")
         {
             return ChecklistD.Run(scenario, args, processes[0], pids);
+        }
+
+        if (scenario.Length >= 1 && scenario[0] == 'e'
+            && (scenario.Length == 1 || char.IsDigit(scenario[1])))
+        {
+            return ChecklistE.Run(scenario, args, processes[0], pids);
         }
 
         return scenario switch

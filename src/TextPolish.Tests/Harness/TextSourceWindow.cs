@@ -24,7 +24,7 @@ internal sealed class TextSourceWindow : IDisposable
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new(false);
 
-    private TextSourceWindow(string text)
+    private TextSourceWindow(string text, string title)
     {
         _box = new TextBox
         {
@@ -36,7 +36,7 @@ internal sealed class TextSourceWindow : IDisposable
 
         _form = new Form
         {
-            Text = "UIA試作の文章",
+            Text = title,
             Width = 520,
             Height = 220,
             StartPosition = FormStartPosition.CenterScreen,
@@ -66,10 +66,14 @@ internal sealed class TextSourceWindow : IDisposable
         _thread.SetApartmentState(ApartmentState.STA);
     }
 
-    /// <summary>窓を出して、文章を全選択した状態にする。</summary>
-    public static TextSourceWindow? Open(string text, int timeoutMs = 10000)
+    /// <summary>
+    /// 窓を出して、文章を全選択した状態にする。
+    /// 題名を分けられるのは、書き戻し先の確認(E)で窓を2つ使うため。
+    /// </summary>
+    public static TextSourceWindow? Open(
+        string text, string title = "UIA試作の文章", int timeoutMs = 10000)
     {
-        var window = new TextSourceWindow(text);
+        var window = new TextSourceWindow(text, title);
         window._thread.Start();
 
         if (window._ready.Wait(timeoutMs))
