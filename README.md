@@ -95,6 +95,10 @@ dotnet publish src\TextPolish.App\TextPolish.App.csproj -c Release -r win-x64 --
 
 ## 注意
 
+エンドポイントは `https://` でなければ送信しません。`http://` のままだと、整形する文章と
+APIキーが暗号化されずに流れるためです。自分のPCの中で動かしているサーバー
+(`localhost` / `127.0.0.1` / `::1`)だけは `http://` のまま使えます。
+
 APIキーはWindowsのデータ保護機能(DPAPI)で暗号化して `appsettings.json` に保存されます。
 保存したときと同じWindowsユーザーでしか読み出せません。v1.0.1以前の平文のキーは起動時に自動で暗号化されます。
 

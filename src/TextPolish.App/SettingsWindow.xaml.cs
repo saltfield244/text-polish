@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using TextPolish.Core.Configuration;
 using TextPolish.Core.Hotkey;
+using TextPolish.Core.Llm;
 using TextPolish.Core.Logging;
 
 namespace TextPolish.App;
@@ -197,6 +198,17 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        // 送信先が http:// なら、文章もAPIキーも平文で流れる。保存させない
+        // (ループバックは例外。EndpointPolicy 参照)。
+        // 見るのは**これから使うプロバイダ**の欄だけにしている。使っていないプロバイダの
+        // 欄まで塞ぐと、切り替えの準備中に保存できなくなるため。切り替えたあとに
+        // 問題があれば、送信直前の同じ判定が止める。
+        if (!ValidateSelectedEndpoint())
+        {
+            return;
+        }
+
+        EndpointWarning.Visibility = Visibility.Collapsed;
         _settings.Polish.Enabled = EnablePolishCheckBox.IsChecked == true;
         _settings.Polish.Hotkey = _pendingPolishHotkey;
         _settings.Polish.ShowDiffByDefault = ShowDiffCheckBox.IsChecked == true;
@@ -231,6 +243,28 @@ public partial class SettingsWindow : Window
 
         _onSaved(_settings);
         Close();
+    }
+
+    /// <summary>
+    /// いま選んでいるプロバイダのエンドポイントが、送信先として使えるかを見る。
+    /// 使えなければ理由を画面に出して false を返す(保存させない)。
+    /// </summary>
+    private bool ValidateSelectedEndpoint()
+    {
+        var (name, endpoint) =
+            GeminiRadio.IsChecked == true ? ("Gemini", GeminiEndpointBox.Text.Trim())
+            : OpenAiCompatibleRadio.IsChecked == true
+                ? ("OpenAI互換", OpenAiEndpointBox.Text.Trim())
+                : ("Azure OpenAI", AzureEndpointBox.Text.Trim());
+
+        if (EndpointPolicy.IsAllowed(endpoint, out var reason))
+        {
+            return true;
+        }
+
+        EndpointWarning.Text = $"{name} のエンドポイントを保存できません。{reason}";
+        EndpointWarning.Visibility = Visibility.Visible;
+        return false;
     }
 
     /// <summary>

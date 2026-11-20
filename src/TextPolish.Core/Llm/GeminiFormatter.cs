@@ -31,6 +31,15 @@ public sealed class GeminiFormatter : ILlmFormatter
 
     public async Task<string> FormatAsync(LlmFormatRequest request, CancellationToken ct = default)
     {
+        // 送信先が http:// なら、文章もAPIキーも平文で流れる。送る前に止める
+        // (ループバックは例外。EndpointPolicy 参照)。設定画面の保存時にも同じ判定をするが、
+        // appsettings.json は手で編集できるため、送信直前にも見る。
+        if (!EndpointPolicy.IsAllowed(_settings.Endpoint, out var endpointReason))
+        {
+            _logger.Error($"送信先が使えないため整形しませんでした。{endpointReason}");
+            throw new LlmRejectedException(endpointReason);
+        }
+
         var systemPrompt = await _systemPromptProvider.GetSystemPromptAsync(ct);
         var userPrompt = LlmPromptBuilder.BuildUserPrompt(request);
 
