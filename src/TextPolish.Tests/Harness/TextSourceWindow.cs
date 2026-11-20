@@ -138,6 +138,24 @@ internal sealed class TextSourceWindow : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// 文章の一部だけを選択し直す。
+    ///
+    /// 周辺文脈の確認(H)に要る。既定の全選択では「選択範囲の外の文章」が存在しないため、
+    /// 送られているかどうかを見分けられない。前面化のあとに呼ぶこと
+    /// (<see cref="Activate"/> は選択を作り直すので、順番を逆にすると全選択へ戻る)。
+    /// </summary>
+    public void Select(int start, int length)
+    {
+        Run(() =>
+        {
+            _box.Focus();
+            _box.Select(start, length);
+        });
+
+        Thread.Sleep(150);
+    }
+
     /// <summary>入力を一時的につないでから前面化を頼む。</summary>
     private static void ForceForeground(IntPtr handle)
     {

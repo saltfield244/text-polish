@@ -81,6 +81,18 @@ internal static class UiaDriver
             return ChecklistG.Run(scenario, args, processes[0], pids);
         }
 
+        if (scenario.Length >= 1 && scenario[0] == 'f'
+            && (scenario.Length == 1 || char.IsDigit(scenario[1])))
+        {
+            return ChecklistF.Run(scenario, args, processes[0], pids);
+        }
+
+        if (scenario.Length >= 1 && scenario[0] == 'h'
+            && (scenario.Length == 1 || char.IsDigit(scenario[1])))
+        {
+            return ChecklistH.Run(scenario, args, processes[0], pids);
+        }
+
         return scenario switch
         {
             "palette" => DrivePalette(pids, args),
