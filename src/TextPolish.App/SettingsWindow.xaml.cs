@@ -12,18 +12,32 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _settings;
     private readonly Action<AppSettings> _onSaved;
     private readonly IAppLogger _logger;
+
+    /// <summary>
+    /// 自由指示の履歴を消す手段。呼び出し側(App)が持っている
+    /// <c>InstructionHistory</c> を直接渡してもらう。消せたかどうかを返す。
+    /// この画面は設定の編集しかしないのが筋だが、履歴はファイルであって設定値ではなく、
+    /// 「消す」は保存を待たずにその場で効くべき操作なので、例外として受け取る。
+    /// </summary>
+    private readonly Func<bool>? _clearHistory;
+
     private string _pendingPolishHotkey;
     private string _pendingQuickHotkey;
 
     /// <summary>「削除」ボタンが押されたプロバイダのAPIキー入力欄。</summary>
     private readonly HashSet<PasswordBox> _apiKeyDeleteRequested = new();
 
-    public SettingsWindow(AppSettings settings, Action<AppSettings> onSaved, IAppLogger logger)
+    public SettingsWindow(
+        AppSettings settings,
+        Action<AppSettings> onSaved,
+        IAppLogger logger,
+        Func<bool>? clearHistory = null)
     {
         InitializeComponent();
         _settings = settings;
         _onSaved = onSaved;
         _logger = logger;
+        _clearHistory = clearHistory;
         _pendingPolishHotkey = settings.Polish.Hotkey;
         _pendingQuickHotkey = settings.Polish.QuickHotkey;
 
@@ -32,6 +46,8 @@ public partial class SettingsWindow : Window
         EnablePolishCheckBox.IsChecked = settings.Polish.Enabled;
         ShowDiffCheckBox.IsChecked = settings.Polish.ShowDiffByDefault;
         SendSurroundingContextCheckBox.IsChecked = settings.Polish.SendSurroundingContext;
+        SaveInstructionHistoryCheckBox.IsChecked = settings.Polish.SaveInstructionHistory;
+        ClearInstructionHistoryButton.IsEnabled = _clearHistory is not null;
         LoadQuickPresets();
         PresetSummaryText.Text = "登録済み: " +
             string.Join(" / ", settings.Polish.Presets.Select(p => p.Name));
@@ -185,6 +201,7 @@ public partial class SettingsWindow : Window
         _settings.Polish.Hotkey = _pendingPolishHotkey;
         _settings.Polish.ShowDiffByDefault = ShowDiffCheckBox.IsChecked == true;
         _settings.Polish.SendSurroundingContext = SendSurroundingContextCheckBox.IsChecked == true;
+        _settings.Polish.SaveInstructionHistory = SaveInstructionHistoryCheckBox.IsChecked == true;
         _settings.Polish.QuickHotkey = _pendingQuickHotkey;
         _settings.Polish.QuickPresetName =
             QuickPresetCombo.SelectedItem as string ?? _settings.Polish.QuickPresetName;
@@ -322,5 +339,43 @@ public partial class SettingsWindow : Window
         _pendingQuickHotkey = string.Empty;
         QuickHotkeyTextBox.Text = string.Empty;
         QuickHotkeyWarning.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 「履歴を消す」。保存を待たずにその場で消す。消すこと自体は取り消せないので、
+    /// 先に確認する(画面には件数を出していないため、何件消えるかは見えない)。
+    /// </summary>
+    private void ClearInstructionHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_clearHistory is null)
+        {
+            return;
+        }
+
+        // MessageBox は WinForms 側にも同名があるため、完全修飾する。
+        var answer = System.Windows.MessageBox.Show(
+            "保存されている自由指示の履歴をすべて削除します。元に戻せません。よろしいですか?",
+            "テキスト整形ツール",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+
+        if (answer != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        var cleared = _clearHistory();
+        ShowHistoryStatus(
+            cleared ? "自由指示の履歴を削除しました。" : "履歴を削除できませんでした。ログを確認してください。",
+            cleared);
+    }
+
+    private void ShowHistoryStatus(string message, bool ok)
+    {
+        InstructionHistoryStatus.Text = message;
+        InstructionHistoryStatus.Foreground = ok
+            ? System.Windows.Media.Brushes.Gray
+            : System.Windows.Media.Brushes.Firebrick;
+        InstructionHistoryStatus.Visibility = Visibility.Visible;
     }
 }

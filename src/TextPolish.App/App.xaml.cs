@@ -57,7 +57,8 @@ public partial class App : Application
             Timeout = TimeSpan.FromSeconds(Math.Max(1, _settings.RequestTimeoutSeconds)),
         };
 
-        _history = new InstructionHistory(_logger);
+        _history = new InstructionHistory(
+            _logger, enabled: _settings.Polish.SaveInstructionHistory);
         _history.Load();
 
         InitializePolishHotkey();
@@ -434,7 +435,7 @@ public partial class App : Application
 
         try
         {
-            var window = new SettingsWindow(_settings, OnSettingsSaved, _logger);
+            var window = new SettingsWindow(_settings, OnSettingsSaved, _logger, _history.Clear);
             window.ShowDialog();
         }
         finally
@@ -460,6 +461,15 @@ public partial class App : Application
                 $"設定を保存できませんでした。\n{ex.Message}\n\n変更は今回の起動中のみ有効です。",
                 "テキスト整形ツール", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
+        }
+
+        // 履歴の保存可否はその場で効かせる。無効にしたのに、閉じるまで積まれ続けたり
+        // 過去の蓄積がドロップダウンに出続けるのは、選んだことと食い違うため。
+        _history.Enabled = _settings.Polish.SaveInstructionHistory;
+
+        if (!_history.Enabled)
+        {
+            _history.Clear();
         }
 
         // フックの張り直しは設定画面を閉じたあとに ShowSettingsWindow 側で行う。

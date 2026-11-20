@@ -104,6 +104,11 @@ APIキーはWindowsのデータ保護機能(DPAPI)で暗号化して `appsetting
 [README-インストール手順.txt](README-インストール手順.txt) の
 「送信されるデータについて」を参照してください。
 
+パレットの「自由指示」に入力した文面は、`%AppData%\TextPolish\instruction-history.txt` へ
+平文で保存されます(最大20件。整形した文章やLLMの応答は含みません)。
+保存したくない場合は、設定画面の「自由指示の履歴」をオフにしてください
+(`SaveInstructionHistory`。オフにして保存すると、今あるファイルも削除されます)。
+
 ## ライセンス
 
 [MIT License](LICENSE)

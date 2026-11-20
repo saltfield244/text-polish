@@ -9,6 +9,10 @@ namespace TextPolish.Core.History;
 /// 保存先を appsettings.json ではなく %AppData%\TextPolish\ 配下にしているのは、
 /// これが設定ではなく実行時に増えていく状態だから。設定ファイルに混ぜると、
 /// 手編集や設定画面からの保存と衝突する。
+///
+/// ファイルは**平文**で、残るのは指示の文面だけ(整形対象の文章やLLMの応答は入らない)。
+/// それでも自由指示には実務の文脈が混ざりやすいため、保存するかどうかを
+/// <see cref="Enabled"/> で切り替えられるようにし、消す手段(<see cref="Clear"/>)も置いた。
 /// </summary>
 public sealed class InstructionHistory
 {
@@ -22,9 +26,10 @@ public sealed class InstructionHistory
     private readonly IAppLogger _logger;
     private readonly List<string> _entries = new();
 
-    public InstructionHistory(IAppLogger logger, string? filePath = null)
+    public InstructionHistory(IAppLogger logger, string? filePath = null, bool enabled = true)
     {
         _logger = logger;
+        Enabled = enabled;
         _filePath = filePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "TextPolish",
@@ -34,11 +39,20 @@ public sealed class InstructionHistory
     /// <summary>新しいものから順に並んだ履歴。</summary>
     public IReadOnlyList<string> Entries => _entries;
 
+    /// <summary>
+    /// 履歴を保存するかどうか(<c>Polish.SaveInstructionHistory</c>)。
+    ///
+    /// false の間は、積んでもファイルへ書かない。**その場の候補としても残さない。**
+    /// 「保存しない」を選んだのに、閉じるまでドロップダウンに出続けるのは
+    /// 期待とずれるため。設定画面から切り替えられるので、途中で変わりうる。
+    /// </summary>
+    public bool Enabled { get; set; }
+
     public void Load()
     {
         _entries.Clear();
 
-        if (!File.Exists(_filePath))
+        if (!Enabled || !File.Exists(_filePath))
         {
             return;
         }
@@ -79,6 +93,11 @@ public sealed class InstructionHistory
             return;
         }
 
+        if (!Enabled)
+        {
+            return;
+        }
+
         _entries.Remove(trimmed);
         _entries.Insert(0, trimmed);
 
@@ -88,6 +107,32 @@ public sealed class InstructionHistory
         }
 
         Save();
+    }
+
+    /// <summary>
+    /// 履歴を空にし、ファイルも削除する。設定画面の「履歴を消す」と、
+    /// 保存を無効にして保存したときに呼ぶ。消せたかどうかを返す。
+    /// </summary>
+    public bool Clear()
+    {
+        _entries.Clear();
+
+        try
+        {
+            if (File.Exists(_filePath))
+            {
+                File.Delete(_filePath);
+            }
+
+            _logger.Info("自由指示の履歴を削除しました。");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // 消せなくても整形は続けられる。黙って成功したように見せない。
+            _logger.Warn($"自由指示の履歴を削除できませんでした: {ex.Message}");
+            return false;
+        }
     }
 
     private void Save()

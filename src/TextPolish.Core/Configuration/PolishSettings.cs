@@ -79,6 +79,24 @@ public sealed class PolishSettings
     public bool SendSurroundingContext { get; set; }
 
     /// <summary>
+    /// 自由指示(パレットの入力欄)の文面を履歴として保存するかどうか。
+    ///
+    /// 保存先は <c>%AppData%\TextPolish\instruction-history.txt</c> で、**平文**。
+    /// 残るのは指示の文面だけで、整形対象の文章やLLMの応答は入らない。それでも
+    /// 自由指示には実務の文脈が混ざりやすく(「〇〇社向けの謝罪文に直す」など)、
+    /// バックアップ・OneDriveの版履歴・ボリュームシャドウコピーに残ると消しにくい。
+    ///
+    /// 既定は true(従来どおり保存する)。打ち直しの手間を省く機能なので、
+    /// 黙って無効にすると使い勝手が落ちるため。暗号化ではなく選べるようにしたのは、
+    /// DPAPI で保護しても同じWindowsユーザーなら復号でき、脅威がほとんど変わらないから
+    /// (IMPLEMENTATION-NOTES の v1.0.3 の項を参照)。
+    ///
+    /// false にして保存すると、既にあるファイルも削除する。
+    /// 「保存しない」と選んだ利用者にとって、過去の蓄積が残るのは想定外であるため。
+    /// </summary>
+    public bool SaveInstructionHistory { get; set; } = true;
+
+    /// <summary>
     /// パレットを出さずに即座に整形して置き換えるホットキー。
     /// 空にすると無効。<see cref="Hotkey"/> と同じキーは指定できない(起動時に無効化する)。
     ///

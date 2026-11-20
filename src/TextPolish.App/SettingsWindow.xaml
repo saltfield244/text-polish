@@ -46,6 +46,19 @@
                     <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
                                Text="入力欄に書かれている文章のうち、選択していない部分(最大500文字)もLLMへ送ります。前後のつながりが分かるため誤変換の修正精度が上がりますが、選択していない文章も外部のLLMプロバイダへ送信されます。オフのときは読み取り自体を行いません。アプリ名による文体の切り替えは、この設定に関わらず有効です。"/>
 
+                    <TextBlock Text="自由指示の履歴" Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
+                    <DockPanel>
+                        <Button x:Name="ClearInstructionHistoryButton" DockPanel.Dock="Right"
+                                Content="履歴を消す" Width="110" Margin="8,0,0,0"
+                                Click="ClearInstructionHistoryButton_Click"/>
+                        <CheckBox x:Name="SaveInstructionHistoryCheckBox" VerticalAlignment="Center"
+                                  Content="入力した自由指示を履歴として保存する"/>
+                    </DockPanel>
+                    <TextBlock x:Name="InstructionHistoryStatus" TextWrapping="Wrap"
+                               Margin="0,4,0,0" Visibility="Collapsed"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"
+                               Text="パレットの自由指示に入力した文面を %AppData%\TextPolish\instruction-history.txt へ平文で保存し、次回から選べるようにします(最大20件)。保存されるのは指示の文面だけで、整形した文章やLLMの応答は含まれません。オフにして保存すると、今あるファイルも削除します。"/>
+
                     <TextBlock Text="即実行(パレットを出さずに整形して置き換える)"
                                Style="{StaticResource SectionLabel}" Margin="0,20,0,6"/>
                     <TextBlock Text="ホットキー" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
