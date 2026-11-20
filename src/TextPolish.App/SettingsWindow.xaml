@@ -123,8 +123,10 @@
                         </DockPanel>
                         <TextBlock x:Name="GeminiApiKeyStatus" TextWrapping="Wrap" Margin="0,2,0,0"
                                    Visibility="Collapsed"/>
-                        <TextBlock Text="モデル" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Text="モデル(控えのみ。送信には使われません)" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="GeminiModelBox"/>
+                        <TextBlock TextWrapping="Wrap" Margin="0,2,0,0" Opacity="0.75"
+                                   Text="Gemini はモデル名をURLで指定します。上のエンドポイントの .../models/&lt;モデル名&gt;:generateContent に埋めてください。この欄だけを変えても反映されません。"/>
                         <TextBlock Text="認証方式" Style="{StaticResource FieldLabel}"/>
                         <ComboBox x:Name="GeminiAuthModeCombo">
                             <ComboBoxItem Content="ApiKeyQueryParam"/>
