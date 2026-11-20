@@ -45,6 +45,19 @@ public sealed class ClipboardTextInserter : ITextInserter
                 // 直前の書き戻しの復元待ちがあれば、今のクリップボードは一時的な整形結果にすぎない。
                 // その場合は復元待ちの内容こそが本来の元内容なので、そちらを引き継ぐ。
                 original = ClipboardRestoreScheduler.TakeOriginal(_logger) ?? ClipboardSnapshot.Capture(_logger);
+
+                // 退避できていないまま書き込むと、利用者がコピーしていた内容が黙って消える。
+                // 書き込んでから気づいても戻せないので、**書く前に**中止する。
+                // 整形結果は呼び出し元が保持しているため、ここで中止しても失われない。
+                // 起きる条件は他のプロセスがクリップボードを握り続けていること
+                // (クリップボード履歴・パスワード管理ソフト・RDPのクリップボード同期)。
+                if (original is null)
+                {
+                    _logger.Error(
+                        "元のクリップボード内容を退避できなかったため、書き戻しを中止しました。" +
+                        "ほかのアプリがクリップボードを使っている可能性があります。");
+                    return TextInsertResult.ClipboardFailed;
+                }
             }
 
             var sequenceBefore = ClipboardSnapshot.CurrentSequenceNumber;
@@ -68,7 +81,7 @@ public sealed class ClipboardTextInserter : ITextInserter
 
             await Task.Delay(50, ct);
 
-            var foregroundBefore = NativeMethods.GetForegroundWindowTitle();
+            var foregroundBefore = NativeMethods.DescribeForegroundWindow();
 
             // Ctrl+V は「送出した瞬間に前面にあるウィンドウ」へ届く。整形に数秒かかるため、
             // その間に利用者が別のアプリへ移っていることも、フォーカス復帰が実際には
@@ -80,7 +93,7 @@ public sealed class ClipboardTextInserter : ITextInserter
             {
                 _logger.Error(
                     $"貼り付け先が取得元のウィンドウではないため、書き戻しを中止しました({targetCheck})。" +
-                    $"取得元: 0x{expectedWindow:X} / 現在のフォアグラウンド: {foregroundBefore}");
+                    $"取得元: 0x{expectedWindow:X} / 現在の前面: {foregroundBefore}");
 
                 // ここでは整形結果を貼り付けていないので、クリップボードは元の内容に戻す。
                 // 整形結果は呼び出し元が保持している(パレットは画面に残し、即実行は
@@ -103,7 +116,7 @@ public sealed class ClipboardTextInserter : ITextInserter
             {
                 _logger.Error(
                     $"SendInputが1件も送出できませんでした(Win32Error={err})。" +
-                    $"送出先フォアグラウンド: {foregroundBefore}");
+                    $"送出先: {foregroundBefore}");
                 return TextInsertResult.SendFailed;
             }
 
@@ -111,7 +124,7 @@ public sealed class ClipboardTextInserter : ITextInserter
 
             _logger.Info(
                 $"テキストを挿入しました(クリップボード+Ctrl+V)。文字数: {text.Length}。" +
-                $"送出先フォアグラウンド: {foregroundBefore}");
+                $"送出先: {foregroundBefore}");
             return TextInsertResult.Inserted;
         }
         catch (Exception ex)

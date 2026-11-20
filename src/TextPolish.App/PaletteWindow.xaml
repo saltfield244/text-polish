@@ -65,9 +65,19 @@
             </ScrollViewer>
         </Grid>
 
+        <!-- 状態の文とボタンは列で分ける。同じ1マスへ重ねて置いていたため、
+             長い文がボタンの下へ回り込んで読めなくなっていた
+             (「整形に失敗しました: 整形結果が出力途中で打ち切られ…」で切れ、
+             肝心の終了理由が読めない)。折り返しも入れる。 -->
         <Grid Grid.Row="7" Margin="0,12,0,0">
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="Gray"/>
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" x:Name="StatusText" VerticalAlignment="Center"
+                       Foreground="Gray" TextWrapping="Wrap" Margin="0,0,8,0"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="ApplyButton" Content="置き換える" Width="110" Margin="0,0,8,0"
                         IsEnabled="False" Click="ApplyButton_Click"/>
                 <Button x:Name="CloseButton" Content="キャンセル" Width="90" Click="CloseButton_Click"/>

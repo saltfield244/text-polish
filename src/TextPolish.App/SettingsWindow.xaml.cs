@@ -104,17 +104,17 @@ public partial class SettingsWindow : Window
     private void LoadLlmSettings()
     {
         AzureEndpointBox.Text = _settings.AzureOpenAI.Endpoint;
-        AzureApiKeyBox.Password = _settings.AzureOpenAI.ApiKey;
+        AzureApiKeyBox.Password = KeyForDisplay(_settings.AzureOpenAI.ApiKey);
         AzureDeploymentBox.Text = _settings.AzureOpenAI.Deployment;
         AzureApiVersionBox.Text = _settings.AzureOpenAI.ApiVersion;
 
         GeminiEndpointBox.Text = _settings.Gemini.Endpoint;
-        GeminiApiKeyBox.Password = _settings.Gemini.ApiKey;
+        GeminiApiKeyBox.Password = KeyForDisplay(_settings.Gemini.ApiKey);
         GeminiModelBox.Text = _settings.Gemini.Model;
         SelectComboByText(GeminiAuthModeCombo, _settings.Gemini.AuthMode);
 
         OpenAiEndpointBox.Text = _settings.OpenAiCompatible.Endpoint;
-        OpenAiApiKeyBox.Password = _settings.OpenAiCompatible.ApiKey;
+        OpenAiApiKeyBox.Password = KeyForDisplay(_settings.OpenAiCompatible.ApiKey);
         OpenAiModelBox.Text = _settings.OpenAiCompatible.Model;
 
         ShowApiKeyStatus(AzureApiKeyBox, AzureApiKeyStatus, _settings.AzureOpenAI);
@@ -220,10 +220,33 @@ public partial class SettingsWindow : Window
     /// 復号できなかったキーがある場合に知らせる。入力欄は空になるが、保存しても暗号文は消えない
     /// (別のWindowsユーザーで保存した設定をコピーしてきた場合など、元の環境なら読めるため)。
     /// </summary>
+    /// <summary>
+    /// パスワード欄へ入れてよい値。配布用テンプレートの "TODO-..." は入れない。
+    ///
+    /// そのまま入れていたが、やめた。PasswordBox は中身を●で隠すため、
+    /// `TODO-gemini-api-key`(19文字)が「19文字のキーが保存済み」に見える。
+    /// キーを入れていない利用者が Gemini へ切り替えて 401 を受け取り、
+    /// 設定画面を見ても原因が分からない状態になっていた。
+    /// </summary>
+    private static string KeyForDisplay(string? apiKey) =>
+        ApiKeyProtector.IsPlaceholder(apiKey) ? string.Empty : apiKey!;
+
     private static void ShowApiKeyStatus(PasswordBox box, TextBlock status, IApiKeySettings keySettings)
     {
         if (!keySettings.ApiKeyUnreadable)
         {
+            // 未設定であることは、空欄だけでは「見えていないだけ」と区別できないので書く。
+            var unset = ApiKeyProtector.IsPlaceholder(keySettings.ApiKey)
+                && string.IsNullOrEmpty(keySettings.ApiKeyProtected);
+
+            if (unset)
+            {
+                status.Text = "このプロバイダのAPIキーは未設定です。使う場合は入力して保存してください。";
+                status.Foreground = System.Windows.Media.Brushes.DimGray;
+                status.Visibility = Visibility.Visible;
+                return;
+            }
+
             status.Visibility = Visibility.Collapsed;
             return;
         }

@@ -18,6 +18,43 @@ internal static class FileLoggerTests
         yield return ("ログ出力: 日付が変わると別のファイルへ書く", DayChangeStartsNewFile);
         yield return ("ログ出力: 書き込み先は現在の日付を指す", LogFilePathFollowsClock);
         yield return ("ログ出力: 改行を含む文面も1行に収める", MultilineMessageStaysOnOneLine);
+        yield return ("ログ出力: 例外はスタックトレースを書かず種別と文面だけ残す", ErrorSummarizesException);
+    }
+
+    /// <summary>
+    /// 例外を渡しても <see cref="Exception.ToString"/> は書かない。
+    ///
+    /// スタックトレースにはビルドした機械の絶対パスが毎回入り、サーバーの応答本文を
+    /// メッセージに含む例外では本文も丸ごと残る。利用者が不具合報告に添付するファイルなので、
+    /// 障害調査に効く「種別と連鎖」だけを残す。
+    /// </summary>
+    private static void ErrorSummarizesException()
+    {
+        WithTempDirectory(dir =>
+        {
+            var logger = new FileLogger(dir, () => new DateTime(2026, 3, 4, 5, 6, 7));
+
+            // 実際に投げて捕まえる。生成しただけの例外にはスタックトレースが無く、
+            // 「出していない」のか「そもそも無い」のか区別できない。
+            try
+            {
+                throw new InvalidOperationException("応答を読めませんでした");
+            }
+            catch (InvalidOperationException ex)
+            {
+                logger.Error("整形に失敗しました。", ex);
+            }
+
+            var written = File.ReadAllText(logger.LogFilePath);
+
+            Assert.True(written.Contains("整形に失敗しました。"), $"自分で書いた文面が残らない: {written}");
+            Assert.True(
+                written.Contains("System.InvalidOperationException"), $"例外の種別が残らない: {written}");
+            Assert.True(written.Contains("応答を読めませんでした"), $"例外の文面が残らない: {written}");
+            Assert.True(!written.Contains("   at "), $"スタックトレースが残る: {written}");
+            Assert.True(
+                !written.Contains("FileLoggerTests.cs"), $"ソースの絶対パスが残る: {written}");
+        });
     }
 
     private static void DayChangeStartsNewFile()

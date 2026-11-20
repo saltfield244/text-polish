@@ -73,7 +73,8 @@ public sealed class PolishSettings
     /// 送ってしまった文章は取り消せない。
     ///
     /// false のときは UI Automation での取得自体を行わない(取ってから捨てるのではなく、
-    /// 最初から読まない)。アプリ名による文体切り替えは、この設定に関わらず機能する。
+    /// 最初から読まない)。アプリ名の取得はこの設定に関わらず行う
+    /// (ただし文体切り替えは配線していない。IMPLEMENTATION-NOTES の「見送ったもの」参照)。
     /// </summary>
     public bool SendSurroundingContext { get; set; }
 

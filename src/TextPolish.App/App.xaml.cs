@@ -109,14 +109,12 @@ public partial class App : Application
             _trayIconManager.SetStatus("選択テキストを取得中...");
 
             var capture = new SelectionCapture(_logger);
-            var selection = await capture.CaptureAsync();
+            var captured = await capture.CaptureAsync();
+            var selection = captured.Selection;
 
             if (selection is null)
             {
-                _trayIconManager.ShowBalloon(
-                    "テキスト整形ツール",
-                    "テキストが選択されていません。整形したい範囲を選択してから実行してください。",
-                    ToolTipIcon.Info);
+                ShowCaptureFailure(captured.Failure);
                 _trayIconManager.SetStatus("待機中");
                 return;
             }
@@ -213,14 +211,12 @@ public partial class App : Application
             _trayIconManager.SetStatus("選択テキストを取得中...");
 
             var capture = new SelectionCapture(_logger);
-            var selection = await capture.CaptureAsync();
+            var captured = await capture.CaptureAsync();
+            var selection = captured.Selection;
 
             if (selection is null)
             {
-                _trayIconManager.ShowBalloon(
-                    "テキスト整形ツール",
-                    "テキストが選択されていません。整形したい範囲を選択してから実行してください。",
-                    ToolTipIcon.Info);
+                ShowCaptureFailure(captured.Failure);
                 return;
             }
 
@@ -297,6 +293,30 @@ public partial class App : Application
             lease.Dispose();
             _trayIconManager.SetStatus("待機中");
         }
+    }
+
+    /// <summary>
+    /// 選択テキストを取得できなかったことを利用者へ伝える。
+    ///
+    /// 理由で文面を変える。クリップボードを使えなかった場合に「選択してください」と
+    /// 案内すると、利用者は選択し直すだけの無駄な操作を繰り返すことになる。
+    /// </summary>
+    private void ShowCaptureFailure(SelectionCaptureFailure failure)
+    {
+        if (failure == SelectionCaptureFailure.ClipboardUnavailable)
+        {
+            _trayIconManager.ShowBalloon(
+                "テキスト整形ツール",
+                "クリップボードを使えなかったため中止しました。" +
+                "ほかのアプリがクリップボードを使っている可能性があります。少し待ってからもう一度実行してください。",
+                ToolTipIcon.Warning);
+            return;
+        }
+
+        _trayIconManager.ShowBalloon(
+            "テキスト整形ツール",
+            "テキストが選択されていません。整形したい範囲を選択してから実行してください。",
+            ToolTipIcon.Info);
     }
 
     /// <summary>

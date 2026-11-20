@@ -21,8 +21,11 @@ public sealed class FormattingSettings
 
     /// <summary>
     /// 上から順に評価し、最初に一致したルールの文体を使う。
-    /// TODO: 利用するアプリに合わせて調整すること。プロセス名は
-    ///       ログの「送出先フォアグラウンド」やタスクマネージャーで確認できる。
+    /// この一覧は配線していない(<see cref="ResolveStyle"/> を呼んでいる箇所は無い)。
+    /// 将来必要になったときのために定義だけ残している。
+    /// IMPLEMENTATION-NOTES の「見送ったもの」を参照。
+    /// TODO: 配線するときは、利用するアプリに合わせて調整すること。プロセス名は
+    ///       ログの「送出先」やタスクマネージャーで確認できる。
     /// </summary>
     public List<AppStyleRule> AppStyleRules { get; set; } = new()
     {

@@ -5,6 +5,33 @@ namespace TextPolish.Core.Automation;
 
 public sealed record CapturedSelection(string Text, IntPtr SourceWindow);
 
+/// <summary>選択テキストを取得できなかった理由。</summary>
+public enum SelectionCaptureFailure
+{
+    /// <summary>取得できた。</summary>
+    None,
+
+    /// <summary>テキストが選択されていない(いちばん多い)。</summary>
+    NoSelection,
+
+    /// <summary>
+    /// クリップボードを使えず、元の内容を退避できなかった。
+    /// この場合は Ctrl+C を送らずに中止する(送ると利用者のコピー内容が消える)。
+    /// </summary>
+    ClipboardUnavailable,
+}
+
+/// <summary>
+/// 選択テキストの取得結果。
+///
+/// 失敗の理由を分けて返すのは、利用者へ出す言葉が変わるため。
+/// 「テキストが選択されていません」と案内すべき場合と、
+/// 「クリップボードを使えませんでした」と案内すべき場合を混ぜると、
+/// 利用者は選択し直すという無駄な操作を繰り返すことになる。
+/// </summary>
+public sealed record SelectionCaptureResult(
+    CapturedSelection? Selection, SelectionCaptureFailure Failure);
+
 /// <summary>
 /// アクティブなウィンドウで選択されているテキストを取得する。
 ///
@@ -22,11 +49,11 @@ public sealed class SelectionCapture
     }
 
     /// <summary>
-    /// 選択テキストを取得する。取得できなかった場合はnullを返す。
+    /// 選択テキストを取得する。取得できなかった場合は理由つきで返す。
     /// あわせて、取得元のウィンドウハンドルも返す(整形後に書き戻す際、
     /// パレットへ移ったフォーカスを元のウィンドウへ戻すために必要)。
     /// </summary>
-    public async Task<CapturedSelection?> CaptureAsync(CancellationToken ct = default)
+    public async Task<SelectionCaptureResult> CaptureAsync(CancellationToken ct = default)
     {
         var sourceWindow = NativeMethods.GetForegroundWindow();
 
@@ -35,6 +62,16 @@ public sealed class SelectionCapture
         // 復元待ちの内容(本来の元内容)を引き継ぐ。その場合はCtrl+Cの成否に関わらず必ず書き戻す。
         var pendingOriginal = ClipboardRestoreScheduler.TakeOriginal(_logger);
         var original = pendingOriginal ?? ClipboardSnapshot.Capture(_logger);
+
+        // 退避できていないまま Ctrl+C を送ると、利用者がコピーしていた内容が黙って消える。
+        // 選択テキストが取れるかどうかより、手元の内容を守るほうが先なので、送らずに中止する。
+        if (original is null)
+        {
+            _logger.Error(
+                "元のクリップボード内容を退避できなかったため、選択テキストの取得を中止しました。" +
+                "ほかのアプリがクリップボードを使っている可能性があります。");
+            return new SelectionCaptureResult(null, SelectionCaptureFailure.ClipboardUnavailable);
+        }
 
         // 以前はCtrl+Cの結果と元の内容を区別するためにクリップボードを一度空にしていたが、
         // それだと空にした時点で元の内容が失われる。更新回数の変化で判定すれば空にしなくてよい。
@@ -72,11 +109,12 @@ public sealed class SelectionCapture
         if (string.IsNullOrWhiteSpace(text))
         {
             _logger.Warn("選択テキストを取得できませんでした。テキストが選択されているか確認してください。");
-            return null;
+            return new SelectionCaptureResult(null, SelectionCaptureFailure.NoSelection);
         }
 
         _logger.Info($"選択テキストを取得しました。文字数: {text.Length}");
-        return new CapturedSelection(text, sourceWindow);
+        return new SelectionCaptureResult(
+            new CapturedSelection(text, sourceWindow), SelectionCaptureFailure.None);
     }
 
     private static void SendCtrlC()

@@ -37,8 +37,17 @@ public sealed class FileLogger : IAppLogger
 
     public void Warn(string message) => Write("WARN", message);
 
+    /// <summary>
+    /// 失敗を記録する。例外は <see cref="LogSanitizer.DescribeException"/> で要約する。
+    ///
+    /// <see cref="Exception.ToString"/> を書いていたが、やめた。スタックトレースには
+    /// ビルドした機械の絶対パス(<c>C:\Dev\text-polish\src\...</c>)が毎回入り、
+    /// サーバーの応答本文をメッセージに含む例外(JSONの解析失敗など)では本文も丸ごと残る。
+    /// 障害調査に効くのは例外の種別と連鎖なので、そこだけを残す。
+    /// 呼び出し側が8箇所あるため、各所で直すのではなくここで一度に落とす。
+    /// </summary>
     public void Error(string message, Exception? ex = null) =>
-        Write("ERROR", ex is null ? message : $"{message} :: {ex}");
+        Write("ERROR", ex is null ? message : $"{message} :: {LogSanitizer.DescribeException(ex)}");
 
     private string BuildLogFilePath(DateTime at) =>
         Path.Combine(_logDirectory, $"app-{at:yyyyMMdd}.log");

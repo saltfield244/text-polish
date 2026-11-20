@@ -81,10 +81,19 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool IsWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    internal static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll")]
+    internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
-    internal static string GetForegroundWindowTitle()
+    /// <summary>
+    /// 前面のウィンドウを、ログへ残してよい形で説明する。
+    ///
+    /// **ウィンドウタイトルは使わない。** タイトルには編集中の文書名やファイル名が入り、
+    /// 未保存のメモ帳ではタブ名が本文の1行目になるため、整形した文章そのものが
+    /// ログへ残ってしまう(実機確認の A1 で、実際に3件とも残っていた)。
+    /// 障害調査に必要なのは「どのアプリの、どのウィンドウだったか」なので、
+    /// プロセス名とハンドルだけを残す。
+    /// </summary>
+    internal static string DescribeForegroundWindow()
     {
         var hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero)
@@ -92,9 +101,28 @@ internal static class NativeMethods
             return "(none)";
         }
 
-        var sb = new System.Text.StringBuilder(256);
-        GetWindowText(hwnd, sb, sb.Capacity);
-        return $"{sb} [hwnd=0x{hwnd:X}]";
+        return $"{GetProcessName(hwnd)} [hwnd=0x{hwnd:X}]";
+    }
+
+    private static string GetProcessName(IntPtr hwnd)
+    {
+        try
+        {
+            GetWindowThreadProcessId(hwnd, out var pid);
+
+            if (pid == 0)
+            {
+                return "(不明)";
+            }
+
+            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return process.ProcessName;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // 既に終了しているウィンドウ。調査に使う情報が1つ減るだけなので、落とさない。
+            return "(不明)";
+        }
     }
 
     internal static INPUT KeyDown(ushort vk) => new()

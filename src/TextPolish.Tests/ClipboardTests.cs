@@ -32,6 +32,164 @@ internal static class ClipboardTests
         yield return ("遅延復元: 引き継ぎ時にユーザーのコピーがあれば元内容を捨てる", TakeOriginalAfterUserCopy);
         yield return ("遅延復元: 終了時は待たずに復元する", RestorePendingNowRestores);
         yield return ("書き戻し: 貼り付け先が違えば送出せずクリップボードを戻す", InsertAbortsWhenTargetWindowIsGone);
+        yield return ("書き戻し: 退避できなければ書き込まずに中止する", InsertAbortsWhenOriginalCannotBeSaved);
+        yield return ("取得: 退避できなければCtrl+Cを送らずに中止する", CaptureAbortsWhenOriginalCannotBeSaved);
+    }
+
+    /// <summary>
+    /// 元の内容を退避できないときは、整形結果をクリップボードへ**書かずに**中止する。
+    ///
+    /// 書いてから退避できていないことに気づいても、利用者がコピーしていた内容はもう戻せない。
+    /// 実際に起こる条件は、ほかのプロセスがクリップボードを開いたまま離さないこと
+    /// (クリップボード履歴・パスワード管理ソフト・RDPのクリップボード同期)。
+    /// ここでは別スレッドでクリップボードを開いたままにして、その状態を作る。
+    /// </summary>
+    private static void InsertAbortsWhenOriginalCannotBeSaved()
+    {
+        const string original = "利用者がコピーしていた内容(消えてはいけない)";
+        Set(() => Clipboard.SetText(original));
+
+        TextInsertResult result;
+
+        // 掴んだままにするだけでは足りない。書き込みも同じように失敗するため、
+        // 保護を外しても結果が ClipboardFailed になり、確認が通ってしまう(実際に通った)。
+        // 本当に危ないのは「退避は失敗したが、書き込みは成功する」瞬間なので、
+        // 退避の失敗がログに出た時点で離し、書き込みだけ成功する状態を作る。
+        using (var holder = new ClipboardHolder())
+        {
+            Assert.True(holder.Held, "クリップボードを掴めなかった(この確認はできない)");
+
+            var logger = new CallbackLogger(message =>
+            {
+                if (message.Contains("クリップボードを開けなかった", StringComparison.Ordinal))
+                {
+                    holder.Release();
+                }
+            });
+
+            result = new ClipboardTextInserter(logger, restoreClipboard: true, restoreDelayMs: 60_000)
+                .InsertAsync("整形結果(書き込んではいけない)", expectedWindow: new IntPtr(0x1234))
+                .GetAwaiter()
+                .GetResult();
+        }
+
+        Assert.Equal(TextInsertResult.ClipboardFailed, result, "書き戻しの結果");
+        Assert.Equal(original, GetText(), "中止後のクリップボード");
+    }
+
+    /// <summary>ログの文面を見て手を打つためのロガー。</summary>
+    private sealed class CallbackLogger : TextPolish.Core.Logging.IAppLogger
+    {
+        private readonly Action<string> _onMessage;
+
+        public CallbackLogger(Action<string> onMessage) => _onMessage = onMessage;
+
+        public void Info(string message) => _onMessage(message);
+
+        public void Warn(string message) => _onMessage(message);
+
+        public void Error(string message, Exception? ex = null) => _onMessage(message);
+    }
+
+    /// <summary>
+    /// 選択テキストの取得も同じ。退避できないまま Ctrl+C を送ると、
+    /// 利用者がコピーしていた内容が黙って消える。送る前に中止する。
+    ///
+    /// この確認が落ちるときは Ctrl+C が実際に送出される。前面のウィンドウの選択が
+    /// クリップボードへ入るだけで、文章が書き換わることはない。
+    /// </summary>
+    private static void CaptureAbortsWhenOriginalCannotBeSaved()
+    {
+        const string original = "取得前にコピーしていた内容(消えてはいけない)";
+        Set(() => Clipboard.SetText(original));
+
+        SelectionCaptureResult captured;
+
+        using (var holder = new ClipboardHolder())
+        {
+            Assert.True(holder.Held, "クリップボードを掴めなかった(この確認はできない)");
+
+            captured = new SelectionCapture(new NullLogger()).CaptureAsync().GetAwaiter().GetResult();
+        }
+
+        Assert.Equal(
+            SelectionCaptureFailure.ClipboardUnavailable, captured.Failure, "取得できなかった理由");
+        Assert.True(captured.Selection is null, "中止したのに選択テキストを返している");
+        Assert.Equal(original, GetText(), "中止後のクリップボード");
+    }
+
+    /// <summary>
+    /// クリップボードを別スレッドで開いたまま保持する。
+    ///
+    /// 同じスレッドから開くと入れ子で成功してしまうため、必ず別スレッドで開く。
+    /// 離し忘れると以降のテストが全部おかしくなるので <see cref="IDisposable"/> にしてある。
+    /// </summary>
+    private sealed class ClipboardHolder : IDisposable
+    {
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseClipboard();
+
+        private readonly ManualResetEventSlim _release = new(false);
+        private readonly ManualResetEventSlim _opened = new(false);
+        private readonly Thread _thread;
+
+        public ClipboardHolder()
+        {
+            _thread = new Thread(() =>
+            {
+                // 掴めないことがある(直前の操作や、クリップボード履歴などの他プロセス)。
+                // 掴めないと確認そのものが成立しないので、短時間リトライする。
+                for (var i = 0; i < RetryAttempts && !Held; i++)
+                {
+                    Held = OpenClipboard(IntPtr.Zero);
+
+                    if (!Held)
+                    {
+                        Thread.Sleep(RetryIntervalMs);
+                    }
+                }
+
+                _opened.Set();
+                _release.Wait();
+
+                if (Held)
+                {
+                    CloseClipboard();
+                }
+            })
+            {
+                IsBackground = true,
+            };
+
+            _thread.SetApartmentState(ApartmentState.STA);
+            _thread.Start();
+            _opened.Wait(5000 + (RetryAttempts * RetryIntervalMs));
+        }
+
+        /// <summary>掴めたか。掴めていなければ、この確認は成立しない。</summary>
+        public bool Held { get; private set; }
+
+        /// <summary>
+        /// 途中で離す。離し終わるまで待つ(待たずに戻ると、呼び出し側の次の操作が
+        /// まだ掴まれている状態に当たってしまう)。
+        /// </summary>
+        public void Release()
+        {
+            _release.Set();
+            _thread.Join(5000);
+        }
+
+        public void Dispose()
+        {
+            Release();
+            _release.Dispose();
+            _opened.Dispose();
+        }
     }
 
     private static void TextRoundTrip()
