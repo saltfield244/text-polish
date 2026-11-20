@@ -37,9 +37,12 @@ public sealed class GeminiFormatter : ILlmFormatter
         // TODO: Vertex AI経由かGoogle AI Studio経由か未確定(2026-08-08時点)。確定したら
         //       AuthModeに応じたURL組み立て/認証方式や、Vertex AI特有のリクエスト形式差異を
         //       専用実装に置き換えること。現状は下記2パターンを設定切り替えのみでサポート。
-        var url = _settings.AuthMode.Equals("ApiKeyQueryParam", StringComparison.OrdinalIgnoreCase)
-            ? $"{_settings.Endpoint}?key={Uri.EscapeDataString(_settings.ApiKey)}"
-            : _settings.Endpoint;
+        // APIキーはURLに載せない。AI Studio は ?key= のほかに x-goog-api-key ヘッダーも
+        // 受け付けるので、そちらを使う。URLは例外のメッセージ・プロキシのアクセスログ・
+        // 将来URLを書く経路のいずれにも残りうるため、鍵を混ぜない形にしておく。
+        // (AuthMode の値名は ApiKeyQueryParam のまま。既存の設定ファイルを壊さないため、
+        //  値の意味を「APIキーで認証する(AI Studio想定)」と読み替えている)
+        var url = _settings.Endpoint;
 
         var body = new
         {
@@ -62,6 +65,10 @@ public sealed class GeminiFormatter : ILlmFormatter
         if (_settings.AuthMode.Equals("BearerToken", StringComparison.OrdinalIgnoreCase))
         {
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey);
+        }
+        else
+        {
+            httpRequest.Headers.Add("x-goog-api-key", _settings.ApiKey);
         }
 
         httpRequest.Content = JsonContent.Create(body);

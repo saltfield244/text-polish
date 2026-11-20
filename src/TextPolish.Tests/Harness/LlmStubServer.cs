@@ -50,7 +50,8 @@ internal sealed record StubScenario
 }
 
 /// <summary>スタブが受け取ったリクエスト1件。本文は検証のためメモリ上にだけ持つ。</summary>
-internal sealed record StubRequest(string Method, string Target, string Body)
+internal sealed record StubRequest(
+    string Method, string Target, string Body, IReadOnlyDictionary<string, string>? Headers = null)
 {
     // JSONの \uXXXX エスケープ。System.Text.Json は既定で非ASCIIをすべてこの形に逃がすため、
     // 日本語の本文はそのままでは文字列として探せない。
@@ -76,6 +77,15 @@ internal sealed record StubRequest(string Method, string Target, string Body)
     public bool BodyContains(string text) =>
         Body.Contains(text, StringComparison.Ordinal)
         || DecodedBody.Contains(text, StringComparison.Ordinal);
+
+    /// <summary>
+    /// リクエストヘッダーの値。無ければ null。
+    ///
+    /// APIキーをURLからヘッダーへ移したので(Gemini の x-goog-api-key)、
+    /// 「URLに乗っていないこと」と「ヘッダーで届いていること」の両方を見るために要る。
+    /// </summary>
+    public string? Header(string name) =>
+        Headers is not null && Headers.TryGetValue(name, out var value) ? value : null;
 }
 
 /// <summary>
@@ -381,11 +391,20 @@ internal sealed class LlmStubServer : IDisposable
 
         var length = 0;
         var chunked = false;
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var line in lines)
         {
             const string LengthHeader = "Content-Length:";
             const string EncodingHeader = "Transfer-Encoding:";
+
+            // 1行目(リクエスト行)と空行以外は「名前: 値」として控える。
+            var colon = line.IndexOf(':');
+
+            if (colon > 0 && !ReferenceEquals(line, lines[0]) && line != lines[0])
+            {
+                headers[line[..colon].Trim()] = line[(colon + 1)..].Trim();
+            }
 
             if (line.StartsWith(LengthHeader, StringComparison.OrdinalIgnoreCase))
             {
@@ -402,7 +421,7 @@ internal sealed class LlmStubServer : IDisposable
             ? await ReadChunkedBodyAsync(stream)
             : await ReadFixedLengthBodyAsync(stream, length);
 
-        return new StubRequest(method, target, body);
+        return new StubRequest(method, target, body, headers);
     }
 
     private static async Task<string> ReadFixedLengthBodyAsync(NetworkStream stream, int length)

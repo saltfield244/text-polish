@@ -38,7 +38,7 @@ internal static class LlmErrorLoggingTests
         yield return ("エラーログ: GeminiのHTTPエラーで本文を残さない", GeminiHttpErrorKeepsNoBody);
         yield return ("エラーログ: Geminiの途中終了で本文を残さない", GeminiTruncatedKeepsNoBody);
         yield return ("エラーログ: Geminiの不正JSONで本文を残さない", GeminiMalformedKeepsNoBody);
-        yield return ("エラーログ: GeminiのURLクエリのAPIキーを残さない", GeminiTransportExceptionKeepsNoKey);
+        yield return ("エラーログ: GeminiのAPIキーはURLに載らず、例外にも残らない", GeminiTransportExceptionKeepsNoKey);
         yield return ("エラーログ: 要約はerror.messageを残さない", ErrorSummaryKeepsNoMessage);
         yield return ("エラーログ: 要約はJSONでない本文の中身を残さない", ErrorSummaryKeepsNoNonJsonBody);
         yield return ("エラーログ: 想定外に長い終了理由は残さない", LongFinishReasonIsNotLogged);
@@ -162,21 +162,29 @@ internal static class LlmErrorLoggingTests
 
     private static void GeminiTransportExceptionKeepsNoKey()
     {
-        // AI Studio 経路は ?key=... でAPIキーを渡すため、URLを含む例外メッセージが危ない。
+        // 例外のメッセージにはURLが載る。以前は AI Studio 経路のキーを ?key=... で
+        // 渡していたため、この経路でキーが漏れた。いまはヘッダー(x-goog-api-key)で
+        // 渡すので、URLにそもそもキーが無い。両方を確かめる。
         Uri? requested = null;
+        string? header = null;
         var log = RunGemini(request =>
         {
             requested = request.RequestUri;
+            header = request.Headers.TryGetValues("x-goog-api-key", out var values)
+                ? string.Join(string.Empty, values)
+                : null;
             throw new HttpRequestException($"名前解決に失敗しました: {request.RequestUri}");
         });
 
         Assert.True(
-            requested is not null && requested.Query.Contains(GeminiKey),
-            $"前提: URLのクエリにAPIキーが入っている ({requested?.Query})");
+            requested is not null
+                && !requested.ToString().Contains("key=", StringComparison.OrdinalIgnoreCase)
+                && !requested.ToString().Contains(GeminiKey, StringComparison.Ordinal),
+            $"URLにAPIキーが載っている ({requested})");
+        Assert.Equal(GeminiKey, header, "x-goog-api-key で送られたキー");
 
         AssertNoSecrets(log, GeminiKey);
         AssertContains(log, nameof(HttpRequestException));
-        AssertContains(log, LogSanitizer.Redacted);
     }
 
     // ---- 要約・秘匿処理そのもの ----

@@ -50,7 +50,7 @@ internal static class LlmStubServerTests
         yield return ("スタブ: 実行中にシナリオを差し替えられる", ScenarioCanBeSwappedWhileRunning);
         yield return ("スタブ: 呼ばれた回数を数えられる", RequestCountIsObservable);
         yield return ("スタブ: 送られたリクエスト本文を検証できる", SentBodyIsObservable);
-        yield return ("スタブ: GeminiのキーはURLクエリで送られ、ログには残らない", GeminiKeyGoesToQueryButNotToLog);
+        yield return ("スタブ: Geminiのキーはヘッダーで送られ、URLとログには残らない", GeminiKeyGoesToHeaderNotUrl);
 
         yield return ("ログ照合: 原文の断片を見つける", LogAssertFindsFragment);
         yield return ("ログ照合: APIキーらしい形を見つける", LogAssertFindsKeyShape);
@@ -235,7 +235,7 @@ internal static class LlmStubServerTests
         Assert.True(last.DecodedBody.Contains(Secret, StringComparison.Ordinal), "ほどいた本文に文章がない");
     }
 
-    private static void GeminiKeyGoesToQueryButNotToLog()
+    private static void GeminiKeyGoesToHeaderNotUrl()
     {
         using var server = new LlmStubServer();
         using var client = new HttpClient();
@@ -245,9 +245,13 @@ internal static class LlmStubServerTests
         var last = server.LastRequest;
         Assert.True(last is not null, "リクエストが記録されていない");
 
-        // AI Studio 経路の仕様どおり、キーはURLクエリに乗る(セキュリティレビューの指摘4番)。
-        // ここでは「そうなっている」ことを固定し、ログへは出ないことを別に確かめる。
-        Assert.True(last!.Target.Contains("?key="), $"キーがURLクエリに乗っていない: {last.Target}");
+        // **APIキーはURLに乗せない。** AI Studio は x-goog-api-key ヘッダーも受け付けるので
+        // そちらで渡す。URLは例外のメッセージやプロキシのアクセスログに残りうるため。
+        // 以前は ?key= に乗せており、この行は「乗っていること」を固定していた。
+        Assert.True(!last!.Target.Contains("key=", StringComparison.OrdinalIgnoreCase),
+            $"キーがURLに乗っている: {last.Target}");
+        Assert.Equal(GeminiKey, last.Header("x-goog-api-key"), "x-goog-api-key で届いたキー");
+        Assert.True(last.Header("Authorization") is null, "Bearer でも送っている");
         Assert.True(last.BodyContains("\"contents\""), "Gemini の形で送られていない");
         Assert.True(!log.Contains(GeminiKey), $"キーがログに残っている: {log}");
     }

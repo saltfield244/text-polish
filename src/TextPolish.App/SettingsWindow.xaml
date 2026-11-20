@@ -132,6 +132,8 @@
                             <ComboBoxItem Content="ApiKeyQueryParam"/>
                             <ComboBoxItem Content="BearerToken"/>
                         </ComboBox>
+                        <TextBlock TextWrapping="Wrap" Margin="0,2,0,0" Opacity="0.75"
+                                   Text="ApiKeyQueryParam は AI Studio のAPIキー向けです(キーは x-goog-api-key ヘッダーで送り、URLには載せません)。BearerToken は Vertex AI のアクセストークン向けです。"/>
                     </StackPanel>
 
                     <!-- OpenAI互換 -->
