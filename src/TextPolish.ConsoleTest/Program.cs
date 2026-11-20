@@ -170,8 +170,9 @@ internal static class Program
         }
     }
 
+    // パスの解決はアプリ側と同じ規則を使う(`..` の畳み方がずれないように)。
     private static string ResolveRelative(string baseDir, string path) =>
-        Path.IsPathRooted(path) ? path : Path.Combine(baseDir, path);
+        PromptPathPolicy.Resolve(path, baseDir);
 
     private static void PrintDiff(string original, string result)
     {

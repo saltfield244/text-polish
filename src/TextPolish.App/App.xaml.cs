@@ -49,6 +49,7 @@ public partial class App : Application
             onExitRequested: () => Shutdown());
 
         NotifyIfApiKeyUnreadable();
+        LogPromptFileLocations();
 
         // HttpClient.Timeout は生成後に変更できないため、設定変更時は再起動が必要
         // (OnSettingsSavedのログでその旨を案内している)。
@@ -411,7 +412,38 @@ public partial class App : Application
         _settings.TextInsertion.RestoreDelayMs);
 
     private static string ResolvePath(string path) =>
-        Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+        PromptPathPolicy.Resolve(path, AppContext.BaseDirectory);
+
+    /// <summary>
+    /// システムプロンプトと用語辞書が、どのファイルから読まれるかをログに残す。
+    /// この2つの中身は全文がシステムプロンプトとしてLLMへ送られるため、
+    /// 「何を読んでいたか」を後から追えるようにする。アプリのフォルダの外を
+    /// 指している場合は警告にする(止めはしない。共有フォルダに辞書を置く運用があるため。
+    /// <see cref="PromptPathPolicy"/> 参照)。
+    ///
+    /// 起動時と、設定画面を開いて設定を読み直した直後に呼ぶ。
+    /// appsettings.json を手で書き換えた場合、再起動せずに次の整形から反映されるため。
+    /// </summary>
+    private void LogPromptFileLocations()
+    {
+        foreach (var (label, path) in new[]
+        {
+            ("システムプロンプト", _settings.Polish.SystemPromptFilePath),
+            ("用語辞書", _settings.Polish.GlossaryFilePath),
+        })
+        {
+            var message = PromptPathPolicy.Describe(label, path, AppContext.BaseDirectory, out var warn);
+
+            if (warn)
+            {
+                _logger.Warn(message);
+            }
+            else
+            {
+                _logger.Info(message);
+            }
+        }
+    }
 
     private void ShowSettingsWindow()
     {
@@ -426,6 +458,11 @@ public partial class App : Application
         {
             _logger.Error("設定ファイルの再読み込みに失敗しました。メモリ上の設定を使用します。", ex);
         }
+
+        // 読み直した内容でプロンプト・辞書の置き場所をもう一度見る。
+        // appsettings.json を手で書き換えてパスを別の場所へ向けた場合、
+        // 再起動せずに次の整形から反映されるため、起動時の1回だけでは足りない。
+        LogPromptFileLocations();
 
         // 設定画面を開いている間はフックを止める。
         // 有効なままだと、ホットキーとして割り当てようとしたキーをフックが横取りしてしまい、
